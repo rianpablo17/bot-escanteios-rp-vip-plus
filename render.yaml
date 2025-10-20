@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: bot-escanteios-vip
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python bot_escanteios_rp_vip_plus_final_v3.py"
+    envVars:
+      - key: TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: API_FOOTBALL_KEY
+        sync: false
