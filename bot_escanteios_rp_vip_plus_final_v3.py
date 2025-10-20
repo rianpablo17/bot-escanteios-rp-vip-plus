@@ -21,7 +21,7 @@ from flask import Flask, request, jsonify
 # ---------- LOG / ENV ----------
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
 logging.basicConfig(level=LOG_LEVEL, format='%(asctime)s %(levelname)s:%(name)s: %(message)s')
-logger = logging.getLogger('bot_escanteios_rp-vip_plus')
+logger = logging.getLogger('bot_escanteios_rp_vip_plus')
 
 API_FOOTBALL_KEY = os.getenv('API_FOOTBALL_KEY')
 TOKEN = os.getenv('TOKEN')
@@ -35,8 +35,28 @@ if not TOKEN or not TELEGRAM_CHAT_ID:
     raise ValueError("⚠️ Defina TOKEN e TELEGRAM_CHAT_ID no Environment do Render.")
 
 # ---------- API FOOTBALL ----------
-API_BASE = "https://v3.football.api-sports.io"
-HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
+# ✅ Configuração para acesso via API HUB (RapidAPI)
+API_BASE = "https://api-football-v1.p.rapidapi.com/v3"
+
+HEADERS = {
+    "x-rapidapi-key": API_FOOTBALL_KEY,
+    "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
+}
+
+# ---------- Função genérica para chamadas ----------
+def api_get(endpoint, params=None):
+    """Faz requisição GET à API-Football via RapidAPI"""
+    url = f"{API_BASE}/{endpoint}"
+    try:
+        response = requests.get(url, headers=HEADERS, params=params, timeout=15)
+        response.raise_for_status()
+        data = response.json()
+        if "errors" in data and data["errors"]:
+            logger.error(f"⚠️ Erro retornado pela API: {data['errors']}")
+        return data
+    except Exception as e:
+        logger.error(f"❌ Erro ao conectar à API-Football: {e}")
+        return None
 
 # ---------- ESTRATÉGIAS (mantidas do seu script) ----------
 HT_WINDOW = (35, 40)   # minuto corrido do jogo (0-90)
