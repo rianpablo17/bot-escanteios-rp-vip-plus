@@ -88,7 +88,7 @@ def loop_principal():
         analisar_jogos()
         time.sleep(60)  # Atualiza a cada 1 minuto
 
-if _name_ == "_main_":
+if __name__ == "__main__":
     # Envia mensagem de inicialização no Telegram
     enviar_telegram("🚀 Bot Escanteios VIP Plus iniciado com sucesso e está monitorando jogos!")
 
