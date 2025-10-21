@@ -272,15 +272,43 @@ def api_get(endpoint: str, params: Optional[dict] = None, timeout: int = 20) -> 
         logger.exception("❌ Erro ao conectar à API-Football (%s): %s", endpoint, e)
         return None
 
-def get_live_fixtures() -> List[Dict[str, Any]]:
-    data = api_get("fixtures", params={"live": "all"})
-    fixtures = (data or {}).get('response', []) or []
-    logger.debug("Fixtures ao vivo: %d", len(fixtures))
-    return fixtures
+from time import time, sleep
 
-def get_fixture_statistics(fixture_id: int) -> List[Dict[str, Any]]:
-    data = api_get("fixtures/statistics", params={"fixture": fixture_id})
-    return (data or {}).get('response', []) or []
+LAST_REQUEST = 0
+MIN_INTERVAL = 0.8  # segundos entre chamadas (~75 por minuto)
+
+def safe_request(url, headers, params=None):
+    """
+    Gerencia a taxa de requisições automaticamente.
+    Garante que a API não seja chamada mais rápido que o permitido.
+    """
+    global LAST_REQUEST
+    now = time()
+    elapsed = now - LAST_REQUEST
+    if elapsed < MIN_INTERVAL:
+        sleep(MIN_INTERVAL - elapsed)
+    LAST_REQUEST = time()
+
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        return response
+    except Exception as e:
+        logger.error(f"❌ Erro na requisição segura: {e}")
+        return None
+
+def get_fixture_statistics(fixture_id):
+    try:
+        url = f"{API_BASE}/fixtures/statistics"
+        params = {"fixture": fixture_id}
+        resp = safe_request(url, headers=HEADERS, params=params)
+        if not resp or resp.status_code != 200:
+            logger.warning("⚠️ Erro na API em fixtures/statistics: %s", resp.text if resp else "sem resposta")
+            return None
+        data = resp.json()
+        return data.get("response", [])
+    except Exception as e:
+        logger.exception("Erro em get_fixture_statistics: %s", e)
+        return None
 
 # ====================== EXTRAÇÃO / PRESSÃO =====================
 
@@ -467,16 +495,23 @@ def main_loop():
                             signals_sent = signals_sent + 1 if 'signals_sent' in locals() else 1
 
             # ======= RESUMO DA VARREDURA =======
-            try:
-                logger.info(
-                    "📊 Resumo da varredura: %d jogos analisados | %d sinais enviados | próxima varredura em %ds",
-                    total,
-                    signals_sent if 'signals_sent' in locals() else 0,
-                    scan_interval
-                )
-                signals_sent = 0  # reinicia contador
-            except Exception:
-                pass
+try:
+    logger.info(
+        "📊 Resumo da varredura: %d jogos analisados | %d sinais enviados | próxima varredura em %ds",
+        total,
+        signals_sent if 'signals_sent' in locals() else 0,
+        scan_interval
+    )
+    signals_sent = 0  # reinicia contador
+
+    # Atualiza os dados do painel VIP (/status)
+    atualizar_metricas(total, last_rate_headers)
+
+except Exception:
+    pass
+# ===================================
+
+time.sleep(scan_interval)
             # ===================================
 
             time.sleep(scan_interval)
@@ -484,6 +519,96 @@ def main_loop():
         except Exception as e:
             logger.exception("Erro no loop principal: %s", e)
             time.sleep(SCAN_INTERVAL_BASE)
+
+# ========================= STATUS COMMAND (VIP) ==========================
+from datetime import datetime
+
+# Marca o tempo inicial do bot (uptime)
+START_TIME = datetime.now()
+
+# Variáveis globais auxiliares
+LAST_SCAN_TIME = None
+LAST_API_STATUS = "⏳ Aguardando..."
+LAST_RATE_USAGE = "0%"
+TOTAL_VARRIDURAS = 0
+
+def get_status_message():
+    """Gera mensagem de status com dados VIP"""
+    try:
+        uptime = datetime.now() - START_TIME
+        horas, resto = divmod(uptime.seconds, 3600)
+        minutos, _ = divmod(resto, 60)
+
+        # Recupera métricas globais do loop
+        jogos = globals().get("total", 0)
+        sinais = globals().get("signals_sent", 0)
+        api_status = globals().get("LAST_API_STATUS", "✅ OK")
+        rate_usage = globals().get("LAST_RATE_USAGE", "0%")
+        varridas = globals().get("TOTAL_VARRIDURAS", 0)
+
+        last_scan = globals().get("LAST_SCAN_TIME")
+        if last_scan:
+            last_scan = last_scan.strftime("%H:%M:%S")
+        else:
+            last_scan = "Ainda não realizada"
+
+        msg = (
+            "📊 Status Bot Escanteios RP VIP Plus\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            f"🕒 Tempo online: {horas}h {minutos}min\n"
+            f"⚽ Jogos varridos: {jogos}\n"
+            f"🚩 Sinais enviados: {sinais}\n"
+            f"🔁 Varreduras realizadas: {varridas}\n"
+            f"⏱️ Última varredura: {last_scan}\n"
+            f"🧮 Próxima varredura: {SCAN_INTERVAL_BASE}s\n"
+            f"🌐 Status API: {api_status}\n"
+            f"📉 Uso da API: {rate_usage}\n"
+            "━━━━━━━━━━━━━━━━━━━\n"
+            "🤖 Versão Multi v2 Econômico"
+        )
+        return msg
+
+    except Exception as e:
+        return f"❌ Erro ao gerar status: {e}"
+
+# ================================================================
+# 📡 Atualiza métricas globais durante o loop principal
+
+def atualizar_metricas(loop_total, req_headers):
+    """Atualiza dados para o comando /status"""
+    global LAST_SCAN_TIME, LAST_API_STATUS, LAST_RATE_USAGE, TOTAL_VARRIDURAS
+
+    LAST_SCAN_TIME = datetime.now()
+    TOTAL_VARRIDURAS += 1
+
+    # Status da API
+    if "X-RateLimit-Remaining" in req_headers:
+        restante = int(req_headers.get("X-RateLimit-Remaining", 0))
+        limite = int(req_headers.get("X-RateLimit-Limit", 1))
+        uso = 100 - int((restante / limite) * 100)
+        LAST_RATE_USAGE = f"{uso}% usado"
+        LAST_API_STATUS = "✅ OK" if uso < 90 else "⚠️ Alto consumo"
+    else:
+        LAST_API_STATUS = "❌ Sem cabeçalhos (erro API)"
+        LAST_RATE_USAGE = "Indefinido"
+
+# ================================================================
+# 🔗 Handler /status — via webhook (Flask)
+
+from flask import request, jsonify
+
+@app.route(f"/{TOKEN}/status", methods=["POST"])
+def telegram_status_webhook():
+    data = request.get_json()
+    message = data.get("message", {})
+    text = message.get("text", "")
+    chat_id = message.get("chat", {}).get("id")
+
+    if text.strip().lower() == "/status":
+        status_msg = get_status_message()
+        send_telegram_message(status_msg)
+    return jsonify({"ok": True})
+# =================================================================
 
 # =========================== START ============================
 
