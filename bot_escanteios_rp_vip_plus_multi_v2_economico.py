@@ -512,9 +512,6 @@ except Exception:
 # ===================================
 
 time.sleep(scan_interval)
-            # ===================================
-
-            time.sleep(scan_interval)
 
         except Exception as e:
             logger.exception("Erro no loop principal: %s", e)
