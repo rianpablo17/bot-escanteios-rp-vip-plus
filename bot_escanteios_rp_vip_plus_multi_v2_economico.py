@@ -494,28 +494,28 @@ def main_loop():
                             # Contador de sinais enviados
                             signals_sent = signals_sent + 1 if 'signals_sent' in locals() else 1
 
-         # ======= RESUMO DA VARREDURA =======
-try:
-    logger.info(
-        "📊 Resumo da varredura: %d jogos analisados | %d sinais enviados | próxima varredura em %ds",
-        total,
-        signals_sent if 'signals_sent' in locals() else 0,
-        scan_interval
-    )
-    signals_sent = 0  # reinicia contador
+        # ======= RESUMO DA VARREDURA =======
+            try:
+                logger.info(
+                    "📊 Resumo da varredura: %d jogos analisados | %d sinais enviados | próxima varredura em %ds",
+                    total,
+                    signals_sent if 'signals_sent' in locals() else 0,
+                    scan_interval
+                )
+                signals_sent = 0  # reinicia contador
 
-    # Atualiza os dados do painel VIP (/status)
-    atualizar_metricas(total, last_rate_headers)
+                # Atualiza os dados do painel VIP (/status)
+                atualizar_metricas(total, last_rate_headers)
 
-except Exception:
-    pass
-# ===================================
+            except Exception as e:
+                logger.exception("Erro ao finalizar resumo da varredura: %s", e)
 
-    time.sleep(scan_interval)
+            # pausa até a próxima varredura
+            time.sleep(scan_interval)
 
-except Exception as e:
-    logger.exception("Erro no loop principal: %s", e)
-    time.sleep(SCAN_INTERVAL_BASE)
+        except Exception as e:
+            logger.exception("Erro no loop principal: %s", e)
+            time.sleep(SCAN_INTERVAL_BASE)
 
 # ========================= STATUS COMMAND (VIP) ==========================
 from datetime import datetime
