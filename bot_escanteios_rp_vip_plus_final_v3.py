@@ -34,15 +34,12 @@ if not API_FOOTBALL_KEY:
 if not TOKEN or not TELEGRAM_CHAT_ID:
     raise ValueError("⚠️ Defina TOKEN e TELEGRAM_CHAT_ID no Environment do Render.")
 
-# ---------- API FOOTBALL ----------
-# ✅ Configuração para acesso via API HUB (RapidAPI)
-API_BASE = "https://api-football-v1.p.rapidapi.com/v3"
+# ✅ Configuração para acesso direto à API oficial (dashboard.api-football.com)
+API_BASE = "https://v3.football.api-sports.io"
 
 HEADERS = {
-    "x-rapidapi-key": API_FOOTBALL_KEY,
-    "x-rapidapi-host": "api-football-v1.p.rapidapi.com"
+    "x-apisports-key": API_FOOTBALL_KEY
 }
-
 # ---------- Função genérica para chamadas ----------
 def api_get(endpoint, params=None):
     """Faz requisição GET à API-Football via RapidAPI"""
