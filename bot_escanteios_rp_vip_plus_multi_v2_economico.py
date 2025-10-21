@@ -494,7 +494,7 @@ def main_loop():
                             # Contador de sinais enviados
                             signals_sent = signals_sent + 1 if 'signals_sent' in locals() else 1
 
-            # ======= RESUMO DA VARREDURA =======
+         # ======= RESUMO DA VARREDURA =======
 try:
     logger.info(
         "📊 Resumo da varredura: %d jogos analisados | %d sinais enviados | próxima varredura em %ds",
@@ -511,11 +511,11 @@ except Exception:
     pass
 # ===================================
 
-time.sleep(scan_interval)
+    time.sleep(scan_interval)
 
-        except Exception as e:
-            logger.exception("Erro no loop principal: %s", e)
-            time.sleep(SCAN_INTERVAL_BASE)
+except Exception as e:
+    logger.exception("Erro no loop principal: %s", e)
+    time.sleep(SCAN_INTERVAL_BASE)
 
 # ========================= STATUS COMMAND (VIP) ==========================
 from datetime import datetime
