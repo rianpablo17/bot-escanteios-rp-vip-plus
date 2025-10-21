@@ -384,8 +384,6 @@ def should_notify(fixture_id: int, signal_key: str) -> bool:
 # ========================= MAIN LOOP ==========================
 def main_loop():
     logger.info("🔁 Loop econômico iniciado. Base: %ss (renotify=%s min).", SCAN_INTERVAL_BASE, RENOTIFY_MINUTES)
-
-    # Log extra para confirmar execução da thread e início do loop
     logger.info("🟢 Loop econômico ativo: aguardando jogos ao vivo...")
 
     while True:
@@ -464,6 +462,22 @@ def main_loop():
                             msg = build_vip_message(fixture, strat_title, metrics, best_lines)
                             send_telegram_message(msg)
                             logger.info("📤 Sinal enviado [%s] fixture=%s minuto=%s", strat_title, fixture_id, minute)
+
+                            # Contador de sinais enviados
+                            signals_sent = signals_sent + 1 if 'signals_sent' in locals() else 1
+
+            # ======= RESUMO DA VARREDURA =======
+            try:
+                logger.info(
+                    "📊 Resumo da varredura: %d jogos analisados | %d sinais enviados | próxima varredura em %ds",
+                    total,
+                    signals_sent if 'signals_sent' in locals() else 0,
+                    scan_interval
+                )
+                signals_sent = 0  # reinicia contador
+            except Exception:
+                pass
+            # ===================================
 
             time.sleep(scan_interval)
 
