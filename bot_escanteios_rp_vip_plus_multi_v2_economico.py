@@ -11,6 +11,7 @@ VIP Plus — Central de Estratégias Múltiplas com economia de requests:
 - Link Bet365 por busca otimizada
 - Anti-spam por fixture/estratégia
 - Tratamento de limites (HTTP 429) com backoff
+- Mensagens no Telegram com MarkdownV2 + escape seguro (sem erro 400)
 
 ENV (Render → Environment):
 - API_FOOTBALL_KEY : chave oficial dashboard.api-football.com
@@ -22,6 +23,7 @@ ENV (Render → Environment):
 """
 
 import os
+import re
 import time
 import math
 import logging
@@ -79,6 +81,19 @@ sent_signals: Dict[int, Dict[str, float]] = defaultdict(dict)
 # Counters opcionais (diagnóstico)
 request_count = 0
 last_rate_headers = {}
+
+# ====================== ESCAPE MARKDOWNV2 =====================
+
+MDV2_SPECIALS = r'[_*\[\]()~`>#+\-=|{}.!]'
+
+def escape_markdown(text: Any) -> str:
+    """
+    Escapa os caracteres especiais do Telegram MarkdownV2.
+    Use APENAS em campos dinâmicos (nomes de times, ligas, números, estádios).
+    Não escape URLs cruas (deixe-as fora desta função).
+    """
+    s = str(text) if text is not None else ""
+    return re.sub(MDV2_SPECIALS, r'\\\g<0>', s)
 
 # ============================ FLASK ===========================
 
@@ -142,16 +157,23 @@ def evaluate_candidate_lines(current_total: int, lam: float, lines_to_check=None
 # ===================== TELEGRAM / LINKS =====================
 
 def send_telegram_message(text: str):
+    """
+    Envia mensagem em MarkdownV2 seguro.
+    Atenção: não inclua URLs dentro de campos escapados; deixe a URL "crua".
+    """
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "MarkdownV2", "disable_web_page_preview": True}
     try:
         r = requests.post(url, json=payload, timeout=20)
         if r.status_code != 200:
-            logger.warning("Erro Telegram %s: %s", r.status_code, r.text[:300])
+            logger.warning("Erro Telegram %s: %s", r.status_code, r.text[:400])
     except Exception as e:
         logger.exception("Erro ao enviar Telegram: %s", e)
 
 def build_bet365_link(fixture: Dict[str, Any]) -> str:
+    """
+    Link por busca otimizada (não escape a URL).
+    """
     home = fixture.get('teams', {}).get('home', {}).get('name', '') or ''
     away = fixture.get('teams', {}).get('away', {}).get('name', '') or ''
     league = fixture.get('league', {}).get('name', '') or ''
@@ -160,33 +182,57 @@ def build_bet365_link(fixture: Dict[str, Any]) -> str:
 
 def build_vip_message(fixture: Dict[str, Any], strategy_title: str, metrics: Dict[str, Any],
                       best_lines: List[Dict[str, float]]) -> str:
+    """
+    Monta a mensagem com todos os campos dinâmicos escapados para MarkdownV2.
+    Sem usar tags HTML; todos os textos dinâmicos passam por escape_markdown().
+    """
     teams = fixture.get('teams', {})
-    home = teams.get('home', {}).get('name', '?')
-    away = teams.get('away', {}).get('name', '?')
-    minute = metrics.get('minute', 0) or 0
+    home = escape_markdown(teams.get('home', {}).get('name', '?'))
+    away = escape_markdown(teams.get('away', {}).get('name', '?'))
+    minute = escape_markdown(metrics.get('minute', 0))
     goals = fixture.get('goals', {})
     score = f"{goals.get('home','-')} x {goals.get('away','-')}"
-    lines_txt = [f"Linha {ln['line']:.1f} → Win {ln['p_win']*100:.0f}% | Push {ln['p_push']*100:.0f}%"
-                 for ln in best_lines[:3]]
-    pressure_note = 'Pressão detectada' if metrics.get('pressure') else 'Pressão fraca'
-    stadium_small = '✅' if metrics.get('small_stadium') else '❌'
-    bet_link = build_bet365_link(fixture)
+    score = escape_markdown(score)
 
-    txt = [
-        f"📣 <b>{strategy_title}</b>",
-        f"🏟 <b>Jogo:</b> {home} x {away}",
-        f"⏱ <b>Minuto:</b> {minute}  |  ⚽ <b>Placar:</b> {score}",
-        f"⛳ <b>Cantos:</b> {metrics.get('total_corners')} (H:{metrics.get('home_corners')} - A:{metrics.get('away_corners')})",
-        f"⚡ <b>Ataques:</b> H:{metrics.get('home_attacks')}  A:{metrics.get('away_attacks')}",
-        f"🔥 <b>Ataques perigosos:</b> H:{metrics.get('home_danger')}  A:{metrics.get('away_danger')}",
-        f"🏟 <b>Estádio pequeno:</b> {stadium_small}  |  {pressure_note}",
+    total_corners = escape_markdown(metrics.get('total_corners'))
+    home_c = escape_markdown(metrics.get('home_corners'))
+    away_c = escape_markdown(metrics.get('away_corners'))
+    home_att = escape_markdown(metrics.get('home_attacks'))
+    away_att = escape_markdown(metrics.get('away_attacks'))
+    home_d = escape_markdown(metrics.get('home_danger'))
+    away_d = escape_markdown(metrics.get('away_danger'))
+
+    pressure_note = "Pressão detectada" if metrics.get('pressure') else "Pressão fraca"
+    pressure_note = escape_markdown(pressure_note)
+    stadium_small = "✅" if metrics.get('small_stadium') else "❌"
+    strategy_title_md = escape_markdown(strategy_title)
+
+    # Linhas Poisson (escapar números com ponto)
+    lines_txt = []
+    for ln in best_lines[:3]:
+        line = f"{ln['line']:.1f}"
+        pwin = f"{ln['p_win']*100:.0f}"
+        ppush = f"{ln['p_push']*100:.0f}"
+        lines_txt.append(f"Linha {escape_markdown(line)} → Win {escape_markdown(pwin)}% \\| Push {escape_markdown(ppush)}%")
+
+    bet_link = build_bet365_link(fixture)  # NÃO escapar URL
+
+    parts = [
+        f"📣 {strategy_title_md}",
+        f"🏟 Jogo: {home} x {away}",
+        f"⏱ Minuto: {minute}  \\|  ⚽ Placar: {score}",
+        f"⛳ Cantos: {total_corners} \\(H:{home_c} \\- A:{away_c}\\)",
+        f"⚡ Ataques: H:{home_att}  A:{away_att}",
+        f"🔥 Ataques perigosos: H:{home_d}  A:{away_d}",
+        f"🏟 Estádio pequeno: {stadium_small}  \\|  {pressure_note}",
         "",
-        "<b>Top linhas sugeridas (Poisson):</b>",
+        "Top linhas sugeridas \\(Poisson\\):",
         *lines_txt,
         "",
-        f"🔗 <b>Bet365:</b> {bet_link}"
+        # Em MarkdownV2 o link cru funciona bem, sem escapar:
+        f"🔗 Bet365: {bet_link}",
     ]
-    return "\n".join(txt)
+    return "\n".join(parts)
 
 # ====================== API HELPERS / RATE =====================
 
@@ -427,8 +473,8 @@ def main_loop():
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico)")
     try:
-        send_telegram_message("🤖 Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ativo. "
-                              "Ignorando jogos < 25' e otimizando consumo.")
+        boot_msg = "🤖 Bot Escanteios RP VIP Plus — Multi v2 \\(Econômico\\) ativo\\. Ignorando jogos < 25' e otimizando consumo\\."
+        send_telegram_message(boot_msg)
     except Exception:
         pass
     t = threading.Thread(target=main_loop, daemon=True)
