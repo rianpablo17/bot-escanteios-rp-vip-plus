@@ -382,9 +382,12 @@ def should_notify(fixture_id: int, signal_key: str) -> bool:
     return False
 
 # ========================= MAIN LOOP ==========================
-
 def main_loop():
     logger.info("🔁 Loop econômico iniciado. Base: %ss (renotify=%s min).", SCAN_INTERVAL_BASE, RENOTIFY_MINUTES)
+
+    # Log extra para confirmar execução da thread e início do loop
+    logger.info("🟢 Loop econômico ativo: aguardando jogos ao vivo...")
+
     while True:
         try:
             fixtures = get_live_fixtures()
