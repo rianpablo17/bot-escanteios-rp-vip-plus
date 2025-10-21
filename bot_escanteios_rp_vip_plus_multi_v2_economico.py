@@ -44,7 +44,7 @@ logger = logging.getLogger('bot_escanteios_rp_vip_multi_v2_economico')
 API_FOOTBALL_KEY = os.getenv('API_FOOTBALL_KEY')
 TOKEN = os.getenv('TOKEN')
 TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
-SCAN_INTERVAL_BASE = int(os.getenv('SCAN_INTERVAL', '120'))      # intervalo base (s)
+SCAN_INTERVAL_BASE = int(os.getenv('SCAN_INTERVAL', '300'))      # intervalo base (s)
 RENOTIFY_MINUTES = int(os.getenv('RENOTIFY_MINUTES', '10'))      # anti-spam
 
 if not API_FOOTBALL_KEY:
@@ -64,7 +64,7 @@ FT_WINDOW = (80, 90)  # alvo FT
 
 MIN_PRESSURE_SCORE = 0.5
 ATTACKS_MIN = 5
-ATTACKS_DIFF = 4
+ATTACKS_DIFF = 3	
 DANGER_MIN = 5
 DANGER_DIFF = 3
 
@@ -272,8 +272,7 @@ def api_get(endpoint: str, params: Optional[dict] = None, timeout: int = 20) -> 
         logger.exception("❌ Erro ao conectar à API-Football (%s): %s", endpoint, e)
         return None
 
-from time import time, sleep
-
+# ===== Rate Limit Manager (usar sempre time.time/time.sleep) =====
 LAST_REQUEST = 0
 MIN_INTERVAL = 0.8  # segundos entre chamadas (~75 por minuto)
 
@@ -283,11 +282,11 @@ def safe_request(url, headers, params=None):
     Garante que a API não seja chamada mais rápido que o permitido.
     """
     global LAST_REQUEST
-    now = time()
+    now = time.time()
     elapsed = now - LAST_REQUEST
     if elapsed < MIN_INTERVAL:
-        sleep(MIN_INTERVAL - elapsed)
-    LAST_REQUEST = time()
+        time.sleep(MIN_INTERVAL - elapsed)
+    LAST_REQUEST = time.time()
 
     try:
         response = requests.get(url, headers=headers, params=params, timeout=15)
@@ -309,6 +308,23 @@ def get_fixture_statistics(fixture_id):
     except Exception as e:
         logger.exception("Erro em get_fixture_statistics: %s", e)
         return None
+
+# ===================== Live Fixtures (ADICIONADA) =====================
+
+def get_live_fixtures():
+    """Obtém lista de partidas ao vivo da API-Football."""
+    try:
+        url = f"{API_BASE}/fixtures"
+        params = {"live": "all"}
+        resp = safe_request(url, headers=HEADERS, params=params)
+        if not resp or resp.status_code != 200:
+            logger.warning("⚠️ Erro ao buscar fixtures ao vivo: %s", resp.text if resp else "sem resposta")
+            return []
+        data = resp.json()
+        return data.get("response", []) or []
+    except Exception as e:
+        logger.exception("Erro em get_live_fixtures: %s", e)
+        return []
 
 # ====================== EXTRAÇÃO / PRESSÃO =====================
 
@@ -491,10 +507,10 @@ def main_loop():
                             send_telegram_message(msg)
                             logger.info("📤 Sinal enviado [%s] fixture=%s minuto=%s", strat_title, fixture_id, minute)
 
-                            # Contador de sinais enviados
+                            # Contador de sinais enviados (opcional)
                             signals_sent = signals_sent + 1 if 'signals_sent' in locals() else 1
 
-        # ======= RESUMO DA VARREDURA =======
+            # ======= RESUMO DA VARREDURA =======
             try:
                 logger.info(
                     "📊 Resumo da varredura: %d jogos analisados | %d sinais enviados | próxima varredura em %ds",
@@ -591,8 +607,6 @@ def atualizar_metricas(loop_total, req_headers):
 
 # ================================================================
 # 🔗 Handler /status — via webhook (Flask)
-
-from flask import request, jsonify
 
 @app.route(f"/{TOKEN}/status", methods=["POST"])
 def telegram_status_webhook():
