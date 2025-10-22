@@ -610,7 +610,11 @@ if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA VISUAL")
     try:
         # Mensagem de boot — use escape seguro
-        boot_msg = "🤖 Bot VIP ULTRA ativo\\. Ignorando jogos \\< 25' e usando pressão dinâmica \\(soma de indicadores\\)\\."
+        boot_msg = (
+    "🤖 Bot VIP ULTRA ativo\\! "
+    "Ignorando jogos \\< 25' e usando pressão dinâmica \\(soma de indicadores\\) "
+    "sem erros de formatação"
+)
         send_telegram_message(boot_msg)
         if TELEGRAM_ADMIN_ID:
             send_admin_message("🔐 Logs privados habilitados para ADMIN\\. Vou te avisar dos sinais e motivos de ignorar\\.")
