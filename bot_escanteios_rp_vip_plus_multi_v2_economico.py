@@ -69,7 +69,16 @@ request_count = 0
 last_rate_headers = {}
 
 # ====================== ESCAPE MARKDOWNV2 =====================
-MDV2_SPECIALS = r'[_*\[\]\(\)~`>#+\-=|{}.!]
+ MDV2_ESPECIAIS = r'[_*\[\]\(\)~`>#+\-=|{}.!]'
+                    ^
+SintaxeErro: não terminados cordel literal mesmo (detectado às linha 72)
+==> Saído com com status 1 1
+==> Comum maneiras ao to solucionar problemas o seu implantar: https://render.com/docs/troubleshooting-deploys
+==> Correndo ´python bot_escanteios_rp_vip_plus_multi_v2_economico.py'
+  Arquivo "/opt/render/project/src/bot_escanteios_rp_vip_plus_multi_v2_economico.py", linha 72
+    MDV2_ESPECIAIS = r'[_*\[\]\(\)~`>#+\-=|{}.!]
+                    ^
+SintaxeErro: não terminados cordel literal mesmo (detectado às linha 72)
 def escape_markdown(text: Any) -> str:
     s = str(text) if text is not None else ""
     return re.sub(MDV2_SPECIALS, r'\\\g<0>', s)
