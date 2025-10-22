@@ -90,11 +90,55 @@ def root():
 def health():
     return jsonify({'status': 'ok'}), 200
 
+# ====================== TELEGRAM WEBHOOK ======================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def telegram_webhook():
+    """
+    Webhook do Telegram:
+    - Responde ao comando /status diretamente no chat.
+    - Mantém o retorno padrão do Render (para health checks).
+    """
     data = request.get_json(force=True, silent=True) or {}
     logger.debug("Update Telegram (webhook): %s", str(data)[:500])
-    return jsonify({"status": "ok"}), 200
+
+    # Extrai mensagem e dados básicos
+    message = data.get('message', {}) or {}
+    text = (message.get('text') or '').strip().lower()
+    chat_id = str(message.get('chat', {}).get('id', TELEGRAM_CHAT_ID))
+
+    # Responde ao comando /status
+    if text == '/status':
+        try:
+            from datetime import datetime
+            uptime = int(time.time() - START_TIME)
+            horas = uptime // 3600
+            minutos = (uptime % 3600) // 60
+
+            total_jogos = globals().get("total", 0)
+            varreduras = globals().get("TOTAL_VARRIDURAS", 0)
+            api_status = globals().get("LAST_API_STATUS", "✅ OK")
+            uso_api = globals().get("LAST_RATE_USAGE", "Indefinido")
+
+            resposta = (
+                "📊 Status Bot Escanteios RP VIP Plus\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
+                f"🕒 Tempo online: {horas}h {minutos}min\n"
+                f"⚽ Jogos varridos: {total_jogos}\n"
+                f"🔁 Varreduras realizadas: {varreduras}\n"
+                f"🌐 Status API: {api_status}\n"
+                f"📉 Uso da API: {uso_api}\n"
+                "━━━━━━━━━━━━━━━━━━━\n"
+                "🤖 Versão: Multi v2 Econômico ULTRA Sensível v3"
+            )
+
+            _tg_send(chat_id, resposta)
+            logger.info("📨 /status respondido com sucesso para chat %s", chat_id)
+
+        except Exception as e:
+            logger.exception("Erro ao responder /status: %s", e)
+            _tg_send(chat_id, "❌ Erro ao gerar status, tente novamente em instantes.")
+
+    return jsonify({"ok": True}), 200
 
 # ====================== TELEGRAM HELPERS =====================
 def _tg_send(chat_id: str, text: str):
