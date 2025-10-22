@@ -589,7 +589,32 @@ def telegram_status_webhook():
         status_msg = get_status_message()
         send_telegram_message(status_msg)
     return jsonify({"ok": True})
+# ======================= COMANDO /STATUS DIRETO (POLLING SIMPLES) =======================
+import threading
 
+def monitorar_comandos_telegram():
+    """Verifica mensagens recentes do grupo para responder /status."""
+    logger.info("🧠 Módulo de comandos Telegram iniciado (/status disponível).")
+    offset = 0
+    while True:
+        try:
+            url = f"https://api.telegram.org/bot{TOKEN}/getUpdates"
+            r = requests.get(url, params={"offset": offset, "timeout": 15}, timeout=20)
+            data = r.json()
+
+            for upd in data.get("result", []):
+                offset = upd["update_id"] + 1
+                msg = upd.get("message", {})
+                text = msg.get("text", "").strip().lower()
+                chat_id = msg.get("chat", {}).get("id")
+
+                if text == "/status":
+                    status_msg = get_status_message()
+                    _tg_send(chat_id, status_msg)
+
+        except Exception as e:
+            logger.warning("⚠️ Erro ao monitorar comandos Telegram: %s", e)
+            time.sleep(5) 
 # =========================== START ============================
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA")
@@ -602,3 +627,5 @@ if __name__ == "__main__":
     t = threading.Thread(target=main_loop, daemon=True)
     t.start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), debug=False)
+# Thread separada para o comando /status (sem depender de webhook)
+    threading.Thread(target=monitorar_comandos_telegram, daemon=True).start(
