@@ -594,7 +594,7 @@ def telegram_status_webhook():
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA")
     try:
-        send_telegram_message("🤖 Bot VIP ULTRA ativo\\. Ignorando jogos < 25' e usando pressão dinâmica\\.\n🧠 Agora com Jogo Vivo (HT/FT) por soma de ataques/perigosos\\!")
+        send_telegram_message("🤖 Bot VIP ULTRA ativo\\. Ignorando jogos \\< 25' e usando pressão dinâmica\\.\n🧠 Agora com Jogo Vivo \\(HT/FT\\) por soma de ataques/perigosos\\!")
         if TELEGRAM_ADMIN_ID:
             send_admin_message("🔐 Logs privados habilitados para ADMIN\\. Vou te avisar dos sinais e também dos motivos de ignorar\\.")
     except Exception:
