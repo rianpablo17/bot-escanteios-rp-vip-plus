@@ -439,8 +439,8 @@ def main_loop():
                 # ===== Ritmo SOMADO (HT/FT) — o pulo do gato: jogo vivo mesmo sem "dominante"
                 soma_ataques     = (home['attacks'] or 0) + (away['attacks'] or 0)
                 soma_perigosos   = (home['danger']  or 0) + (away['danger']  or 0)
-                ritmo_ht = (30 <= minute <= 40) and (soma_ataques >= 14) and (soma_perigosos >= 5)
-                ritmo_ft = (75 <= minute <= 90) and (soma_ataques >= 18) and (soma_perigosos >= 7)
+                ritmo_ht = (25 <= minute <= 40) and (soma_ataques >= 14) and (soma_perigosos >= 5)
+                ritmo_ft = (70 <= minute <= 90) and (soma_ataques >= 18) and (soma_perigosos >= 7)
 
                 metrics = {
                     'minute': minute,
@@ -586,7 +586,7 @@ def telegram_status_webhook():
     return jsonify({"ok": True})
 
 # =========================== START ============================
-if __name__ == "_main_":
+if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA")
     try:
         send_telegram_message("🤖 Bot VIP ULTRA ativo\\. Ignorando jogos < 25' e usando pressão dinâmica\\.\n🧠 Agora com Jogo Vivo (HT/FT) por soma de ataques/perigosos\\!")
