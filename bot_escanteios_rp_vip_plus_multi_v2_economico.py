@@ -79,7 +79,7 @@ def escape_markdown(text: Any) -> str:
     return re.sub(MDV2_SPECIALS, lambda m: "\\" + m.group(0), s)
 
 # ============================ FLASK ===========================
-app = Flask(_name_)
+app = Flask(__name__)
 
 @app.route('/', methods=['GET'])
 def root():
@@ -591,7 +591,7 @@ def main_loop():
             time.sleep(SCAN_INTERVAL_BASE)
 
 # =========================== START ============================
-if _name_ == "_main_":
+if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3")
     try:
         boot = (
