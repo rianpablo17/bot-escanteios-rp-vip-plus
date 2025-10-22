@@ -69,7 +69,7 @@ request_count = 0
 last_rate_headers = {}
 
 # ====================== ESCAPE MARKDOWNV2 =====================
-MDV2_SPECIALS = r'[_*\[\]()~`>#+\-=|{}.!]'
+MDV2_SPECIALS = r'[_*\[\]\(\)~`>#+\-=|{}.!]
 def escape_markdown(text: Any) -> str:
     s = str(text) if text is not None else ""
     return re.sub(MDV2_SPECIALS, r'\\\g<0>', s)
