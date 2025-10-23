@@ -165,21 +165,30 @@ def telegram_webhook():
 # ====================== TELEGRAM HELPERS ======================
 def _tg_send(chat_id: str, text: str):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "MarkdownV2", "disable_web_page_preview": True}
+
+    def _post(parse_mode=None, body_text=None):
+        payload = {
+            "chat_id": chat_id,
+            "text": body_text if body_text is not None else text,
+            "disable_web_page_preview": True
+        }
+        if parse_mode:
+            payload["parse_mode"] = parse_mode
+        return requests.post(url, json=payload, timeout=20)
+
     try:
-        r = requests.post(url, json=payload, timeout=20)
+        # 1ª tentativa: MarkdownV2
+        r = _post(parse_mode="MarkdownV2")
+        if r.status_code == 400 and "can't parse entities" in r.text.lower():
+            # Fallback automático: reenvia sem parse_mode (texto puro)
+            logger.warning("MarkdownV2 falhou (parse entities). Reenviando como texto simples...")
+            r = _post(parse_mode=None)
+
         if r.status_code != 200:
             logger.warning("Erro Telegram %s: %s", r.status_code, r.text[:400])
+
     except Exception as e:
         logger.exception("Erro ao enviar Telegram: %s", e)
-
-def send_telegram_message(text: str):
-    _tg_send(TELEGRAM_CHAT_ID, text)
-
-def send_admin_message(text: str):
-    if TELEGRAM_ADMIN_ID:
-        _tg_send(TELEGRAM_ADMIN_ID, text)
-
 # ====================== RATE LIMIT SAFE ======================
 LAST_REQUEST = 0.0
 MIN_INTERVAL = 0.8  # ~75/min
@@ -621,8 +630,8 @@ def main_loop():
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3")
     try:
-        # Mensagem de boot (sem logs privados automáticos)
-        send_telegram_message("🤖 Bot VIP ULTRA ativo\\. Ignorando jogos < 18.8' e usando pressão dinâmica\\.")
+        boot_msg = escape_markdown("🤖 Bot VIP ULTRA ativo. Ignorando jogos < 18.8' e usando pressão dinâmica.")
+        send_telegram_message(boot_msg)
     except Exception:
         pass
 
