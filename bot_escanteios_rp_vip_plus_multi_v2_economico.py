@@ -164,65 +164,74 @@ def telegram_webhook():
     return jsonify({"ok": True}), 200
 
 # ====================== TELEGRAM HELPERS ======================
-def _tg_send(chat_id: str, text: str):
+def _tg_send(
+    chat_id: str,
+    text: str,
+    parse_mode: str = "MarkdownV2",
+    disable_web_page_preview: bool = True,
+) -> None:
+    """
+    Envia mensagem ao Telegram com segurança.
+    Se MarkdownV2 falhar, reenvia como texto simples.
+    """
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-    def _post(parse_mode=None, body_text=None):
-        payload = {
-    "chat_id": chat_id,
-    "text": text,
-    "parse_mode": "MarkdownV2",
-    "disable_web_page_preview": True
-}
+    # Escapa caracteres especiais se for MarkdownV2
+    if parse_mode == "MarkdownV2":
+        safe_text = (
+            str(text)
+            .replace("\\", "\\\\")
+            .replace("", "\\")
+            .replace("", "\\")
+            .replace("[", "\\[")
+            .replace("]", "\\]")
+            .replace("(", "\\(")
+            .replace(")", "\\)")
+            .replace("", "\\")
+            .replace("", "\\")
+            .replace(">", "\\>")
+            .replace("#", "\\#")
+            .replace("+", "\\+")
+            .replace("-", "\\-")
+            .replace("=", "\\=")
+            .replace("|", "\\|")
+            .replace("{", "\\{")
+            .replace("}", "\\}")
+            .replace(".", "\\.")
+            .replace("!", "\\!")
+        )
+    else:
+        safe_text = str(text)
 
-# Força escape extra no link, só pra evitar quebra de linha ou erro
-if "http" in text:
-    text = text.replace("(", "\\(").replace(")", "\\)").replace("+", "%2B")
-        if parse_mode:
-            payload["parse_mode"] = parse_mode
-        return requests.post(url, json=payload, timeout=20)
+    payload = {
+        "chat_id": chat_id,
+        "text": safe_text,
+        "disable_web_page_preview": disable_web_page_preview,
+    }
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
 
     try:
-        # 1ª tentativa: MarkdownV2
-        r = _post(parse_mode="MarkdownV2")
-        if r.status_code == 400 and "can't parse entities" in r.text.lower():
-            # Fallback automático: reenvia sem parse_mode (texto puro)
-            logger.warning("MarkdownV2 falhou (parse entities). Reenviando como texto simples...")
-            r = _post(parse_mode=None)
-
+        r = requests.post(url, json=payload, timeout=20)
         if r.status_code != 200:
-            logger.warning("Erro Telegram %s: %s", r.status_code, r.text[:400])
-
+            logger.warning("MarkdownV2 falhou (%s). Reenviando como texto simples...", r.status_code)
+            fallback_payload = {
+                "chat_id": chat_id,
+                "text": str(text),
+                "disable_web_page_preview": True,
+            }
+            requests.post(url, json=fallback_payload, timeout=20)
     except Exception as e:
         logger.exception("Erro ao enviar Telegram: %s", e)
-# ====================== RATE LIMIT SAFE ======================
-LAST_REQUEST = 0.0
-MIN_INTERVAL = 0.8  # ~75/min
 
-def safe_request(url, headers, params=None):
-    global LAST_REQUEST, request_count, last_rate_headers
-    now = time.time()
-    elapsed = now - LAST_REQUEST
-    if elapsed < MIN_INTERVAL:
-        time.sleep(MIN_INTERVAL - elapsed)
-    LAST_REQUEST = time.time()
-    try:
-        resp = requests.get(url, headers=headers, params=params, timeout=15)
-        request_count += 1
-        last_rate_headers = {
-            'x-ratelimit-requests-remaining': resp.headers.get('x-ratelimit-requests-remaining'),
-            'x-ratelimit-requests-limit': resp.headers.get('x-ratelimit-requests-limit'),
-            'x-ratelimit-minutely-remaining': resp.headers.get('x-ratelimit-minutely-remaining'),
-            'x-ratelimit-minutely-limit': resp.headers.get('x-ratelimit-minutely-limit'),
-        }
-        if resp.status_code == 429:
-            logger.warning("⚠️ 429 Too Many Requests — backoff 30s | headers=%s", last_rate_headers)
-            time.sleep(30)
-            return None
-        return resp
-    except Exception as e:
-        logger.error("❌ Erro na requisição segura: %s", e)
-        return None
+
+def send_telegram_message(text: str) -> None:
+    _tg_send(TELEGRAM_CHAT_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
+
+
+def send_admin_message(text: str) -> None:
+    if TELEGRAM_ADMIN_ID:
+        _tg_send(TELEGRAM_ADMIN_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
 # ===================== API CALLS =====================
 def get_live_fixtures():
