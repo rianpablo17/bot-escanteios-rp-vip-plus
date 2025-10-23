@@ -548,7 +548,7 @@ def main_loop():
                 if not fixture_id:
                     continue
 
-                # Economia: ignorar partidas muito cedo, com tolerância (18.8) e arredondamento
+                # Economia: ignorar partidas muito cedo, com tolerância (18.8)
                 minute_raw = fixture.get('fixture', {}).get('status', {}).get('elapsed', 0) or 0
                 minute = round(float(minute_raw), 1)
 
@@ -591,27 +591,30 @@ def main_loop():
                                  total_shots)
                     continue
 
-                # Mensagem Poisson (lam heurístico, ajuste se quiser)
+                # Mensagem Poisson (lam heurístico)
                 best_lines = evaluate_candidate_lines(total_corners, lam=1.5)
 
+                # --- Envio das estratégias padrão ---
                 if estrategias:
                     for strat_title in estrategias:
                         signal_key = f"{strat_title}_{total_corners}"
                         if should_notify(fixture_id, signal_key):
                             msg = build_vip_message(fixture, strat_title, metrics, best_lines)
-                            send_telegram_message(msg)
+                            _tg_send(TELEGRAM_CHAT_ID, msg)
                             signals_sent += 1
                             logger.info("📤 Sinal [%s] fixture=%s minuto=%s", strat_title, fixture_id, minute)
+
+                # --- Envio do setup composto (3/5) ---
                 elif composite_ok:
                     strat_title = "Setup 3/5 — Asiáticos/Limite"
                     signal_key = f"{strat_title}_{total_corners}"
                     if should_notify(fixture_id, signal_key):
                         msg = build_vip_message(fixture, strat_title, metrics, best_lines)
-                        send_telegram_message(msg)
+                        _tg_send(TELEGRAM_CHAT_ID, msg)
                         signals_sent += 1
                         logger.info("📤 Sinal [3/5 Composite] fixture=%s minuto=%s", fixture_id, minute)
 
-            # Resumo da varredura
+            # --- Resumo da varredura ---
             try:
                 logger.info("📊 Resumo: %d jogos analisados | %d sinais enviados | próxima em %ds",
                             total, signals_sent, scan_interval)
