@@ -438,20 +438,30 @@ def composite_trigger_check(fixture: Dict[str, Any], metrics: Dict[str, Any]) ->
 
 # ===================== VIP MESSAGE / LINKS =====================
 def build_bet365_link(fixture: Dict[str, Any]) -> str:
+    """
+    Gera link de busca no Google para Bet365 do jogo atual.
+    """
     home = fixture.get('teams', {}).get('home', {}).get('name', '') or ''
     away = fixture.get('teams', {}).get('away', {}).get('name', '') or ''
     league = fixture.get('league', {}).get('name', '') or ''
     query = f"site:bet365.com {home} x {away} {league}"
-    return f"https://www.google.com/search?q={urllib.parse.quote_plus(home + ' vs ' + away + ' bet365 corners')}"
+    return f"https://www.google.com/search?q={urllib.parse.quote_plus(query)}"
 
-def build_vip_message(fixture: Dict[str, Any], strategy_title: str, metrics: Dict[str, Any],
-                      best_lines: List[Dict[str, float]]) -> str:
+def build_vip_message(
+    fixture: Dict[str, Any],
+    strategy_title: str,
+    metrics: Dict[str, Any],
+    best_lines: List[Dict[str, float]]
+) -> str:
+    """
+    Monta mensagem formatada para envio no Telegram (MarkdownV2 seguro).
+    """
     teams = fixture.get('teams', {})
     home = escape_markdown(teams.get('home', {}).get('name', '?'))
     away = escape_markdown(teams.get('away', {}).get('name', '?'))
     minute = escape_markdown(metrics.get('minute', 0))
     goals = fixture.get('goals', {})
-    score = escape_markdown(f"{goals.get('home','-')} x {goals.get('away','-')}")
+    score = escape_markdown(f"{goals.get('home', '-')} x {goals.get('away', '-')}")
 
     total_corners = escape_markdown(metrics.get('total_corners'))
     home_c = escape_markdown(metrics.get('home_corners'))
@@ -467,16 +477,17 @@ def build_vip_message(fixture: Dict[str, Any], strategy_title: str, metrics: Dic
 
     press_home = escape_markdown(f"{metrics['press_home']:.2f}")
     press_away = escape_markdown(f"{metrics['press_away']:.2f}")
-
     stadium_small = "✅" if metrics.get('small_stadium') else "❌"
     strategy_title_md = escape_markdown(strategy_title)
 
     lines_txt = []
     for ln in best_lines[:3]:
         line = f"{ln['line']:.1f}"
-        pwin = f"{ln['p_win']*100:.0f}"
-        ppush = f"{ln['p_push']*100:.0f}"
-        lines_txt.append(f"Linha {escape_markdown(line)} → Win {escape_markdown(pwin)}% \\| Push {escape_markdown(ppush)}%")
+        pwin = f"{ln['p_win'] * 100:.0f}"
+        ppush = f"{ln['p_push'] * 100:.0f}"
+        lines_txt.append(
+            f"🎯 Linha {escape_markdown(line)} → Win {escape_markdown(pwin)}% \\| Push {escape_markdown(ppush)}%"
+        )
 
     bet_link = build_bet365_link(fixture)
 
@@ -488,22 +499,13 @@ def build_vip_message(fixture: Dict[str, Any], strategy_title: str, metrics: Dic
         f"⚡ Ataques: H:{home_att}  A:{away_att}  \\|  🔥 Perigosos: H:{home_d}  A:{away_d}",
         f"🥅 Chutes: H:{home_sh}  A:{away_sh}  \\|  🎯 Posse: H:{home_pos}%  A:{away_pos}%",
         f"📊 Pressão: H:{press_home}  A:{press_away}  \\|  🏟 Estádio pequeno: {stadium_small}",
-        "",
-        "Top linhas sugeridas \\(Poisson\\):",
+        "━━━━━━━━━━━━━━━━━━━",
+        "🏁 Top Linhas (Poisson):",
         *lines_txt,
-        "",
         f"🔗 Bet365: {bet_link}",
     ]
-    return "\n".join(parts)
 
-# ========================= ANTI-SPAM ==========================
-def should_notify(fixture_id: int, signal_key: str) -> bool:
-    now = time.time()
-    last = sent_signals[fixture_id].get(signal_key, 0)
-    if now - last >= RENOTIFY_MINUTES * 60:
-        sent_signals[fixture_id][signal_key] = now
-        return True
-    return False
+    return "\n".join(parts)
 
 # ========================= MÉTRICAS STATUS ====================
 def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
