@@ -178,7 +178,6 @@ def _tg_send(chat_id: str, text: str):
 # Força escape extra no link, só pra evitar quebra de linha ou erro
 if "http" in text:
     text = text.replace("(", "\\(").replace(")", "\\)").replace("+", "%2B")
-        }
         if parse_mode:
             payload["parse_mode"] = parse_mode
         return requests.post(url, json=payload, timeout=20)
