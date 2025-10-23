@@ -539,9 +539,9 @@ def main_loop():
                     continue
                 minute = fixture.get('fixture', {}).get('status', {}).get('elapsed', 0) or 0
 
-                # Economia: ignorar < 25'
-                if minute < 25:
-                    logger.debug("⏳ Ignorado fixture=%s (min %s < 25')", fixture_id, minute)
+                # Economia: ignorar < 20'
+                if minute < 20:
+                    logger.debug("⏳ Ignorado fixture=%s (min %s < 20')", fixture_id, minute)
                     continue
 
                 stats_resp = get_fixture_statistics(fixture_id)
