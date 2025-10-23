@@ -234,29 +234,44 @@ def send_admin_message(text: str) -> None:
         _tg_send(TELEGRAM_ADMIN_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
 # ===================== API CALLS =====================
+def safe_request(url: str, headers: Dict[str, str], params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+    """
+    Executa uma requisição segura à API-Football e retorna o JSON (ou None em caso de erro).
+    """
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.warning("⚠️ Erro API-Football %s: %s", response.status_code, response.text)
+            return None
+    except Exception as e:
+        logger.exception("Erro em safe_request: %s", e)
+        return None
+
+
 def get_live_fixtures():
     try:
         url = f"{API_BASE}/fixtures"
         params = {"live": "all"}
-        resp = safe_request(url, headers=HEADERS, params=params)
-        if not resp or resp.status_code != 200:
-            logger.warning("⚠️ Erro ao buscar fixtures ao vivo: %s", resp.text if resp else "sem resposta")
+        data = safe_request(url, headers=HEADERS, params=params)
+        if not data:
+            logger.warning("⚠️ Erro ao buscar fixtures ao vivo (sem resposta ou falha na API)")
             return []
-        data = resp.json()
         return data.get("response", []) or []
     except Exception as e:
         logger.exception("Erro em get_live_fixtures: %s", e)
         return []
 
+
 def get_fixture_statistics(fixture_id):
     try:
         url = f"{API_BASE}/fixtures/statistics"
         params = {"fixture": fixture_id}
-        resp = safe_request(url, headers=HEADERS, params=params)
-        if not resp or resp.status_code != 200:
-            logger.warning("⚠️ Erro em fixtures/statistics: %s", resp.text if resp else "sem resposta")
+        data = safe_request(url, headers=HEADERS, params=params)
+        if not data:
+            logger.warning("⚠️ Erro em fixtures/statistics (sem resposta ou falha na API)")
             return None
-        data = resp.json()
         return data.get("response", [])
     except Exception as e:
         logger.exception("Erro em get_fixture_statistics: %s", e)
