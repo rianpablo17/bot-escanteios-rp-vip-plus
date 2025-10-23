@@ -440,12 +440,14 @@ def composite_trigger_check(fixture: Dict[str, Any], metrics: Dict[str, Any]) ->
 def build_bet365_link(fixture: Dict[str, Any]) -> str:
     """
     Gera link de busca no Google para Bet365 do jogo atual.
+    Mantém robustez (funciona para qualquer usuário/região).
     """
     home = fixture.get('teams', {}).get('home', {}).get('name', '') or ''
     away = fixture.get('teams', {}).get('away', {}).get('name', '') or ''
     league = fixture.get('league', {}).get('name', '') or ''
     query = f"site:bet365.com {home} x {away} {league}"
-    return f"https://www.google.com/search?q={urllib.parse.quote_plus(query)}"
+    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
+
 
 def build_vip_message(
     fixture: Dict[str, Any],
@@ -454,13 +456,14 @@ def build_vip_message(
     best_lines: List[Dict[str, float]]
 ) -> str:
     """
-    Monta mensagem formatada para envio no Telegram (MarkdownV2 seguro).
+    Monta mensagem premium, formatada e segura para MarkdownV2 no Telegram.
     """
-    teams = fixture.get('teams', {})
+    teams = fixture.get('teams', {}) or {}
     home = escape_markdown(teams.get('home', {}).get('name', '?'))
     away = escape_markdown(teams.get('away', {}).get('name', '?'))
+
     minute = escape_markdown(metrics.get('minute', 0))
-    goals = fixture.get('goals', {})
+    goals = fixture.get('goals', {}) or {}
     score = escape_markdown(f"{goals.get('home', '-')} x {goals.get('away', '-')}")
 
     total_corners = escape_markdown(metrics.get('total_corners'))
@@ -480,11 +483,12 @@ def build_vip_message(
     stadium_small = "✅" if metrics.get('small_stadium') else "❌"
     strategy_title_md = escape_markdown(strategy_title)
 
+    # Top linhas (Poisson) — até 3
     lines_txt = []
     for ln in best_lines[:3]:
-        line = f"{ln['line']:.1f}"
-        pwin = f"{ln['p_win'] * 100:.0f}"
-        ppush = f"{ln['p_push'] * 100:.0f}"
+        line = f"{ln.get('line', 0):.1f}"
+        pwin = f"{ln.get('p_win', 0.0) * 100:.0f}"
+        ppush = f"{ln.get('p_push', 0.0) * 100:.0f}"
         lines_txt.append(
             f"🎯 Linha {escape_markdown(line)} → Win {escape_markdown(pwin)}% \\| Push {escape_markdown(ppush)}%"
         )
@@ -492,16 +496,22 @@ def build_vip_message(
     bet_link = build_bet365_link(fixture)
 
     parts = [
-        f"📣 {strategy_title_md}",
-        f"🏟 Jogo: {home} x {away}",
-        f"⏱ Minuto: {minute}  \\|  ⚽ Placar: {score}",
-        f"⛳ Cantos: {total_corners} \\(H:{home_c} \\- A:{away_c}\\)",
-        f"⚡ Ataques: H:{home_att}  A:{away_att}  \\|  🔥 Perigosos: H:{home_d}  A:{away_d}",
-        f"🥅 Chutes: H:{home_sh}  A:{away_sh}  \\|  🎯 Posse: H:{home_pos}%  A:{away_pos}%",
-        f"📊 Pressão: H:{press_home}  A:{press_away}  \\|  🏟 Estádio pequeno: {stadium_small}",
+        f"📣 Alerta Estratégia: {strategy_title_md}",
         "━━━━━━━━━━━━━━━━━━━",
-        "🏁 Top Linhas (Poisson):",
+        f"🏟 Jogo: {home} x {away}",
+        f"⏱ Minuto: {minute}'  \\|  ⚽ Placar: {score}",
+        f"⛳ Cantos: {total_corners} \\(H:{home_c} \\- A:{away_c}\\)",
+        "━━━━━━━━━━━━━━━━━━━",
+        f"⚡ Ataques: H:{home_att} / A:{away_att}",
+        f"🔥 Perigosos: H:{home_d} / A:{away_d}",
+        f"🥅 Chutes: H:{home_sh} / A:{away_sh}",
+        f"🎯 Posse: H:{home_pos}% / A:{away_pos}%",
+        f"📊 Pressão: H:{press_home} / A:{press_away}",
+        f"🏟 Estádio pequeno: {stadium_small}",
+        "━━━━━━━━━━━━━━━━━━━",
+        "🏁 Top Linhas \\(Poisson\\):",
         *lines_txt,
+        "━━━━━━━━━━━━━━━━━━━",
         f"🔗 Bet365: {bet_link}",
     ]
 
