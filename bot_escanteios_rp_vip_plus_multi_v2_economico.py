@@ -87,7 +87,7 @@ def escape_markdown(text: Any) -> str:
     return re.sub(MDV2_SPECIALS, lambda m: "\\" + m.group(0), s)
 
 # ============================ FLASK ===========================
-app = Flask(_name_)
+app = Flask(__name__)
 
 @app.route('/', methods=['GET'])
 def root():
