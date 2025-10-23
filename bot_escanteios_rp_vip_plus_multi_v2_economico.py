@@ -21,6 +21,7 @@ import urllib.parse
 from collections import defaultdict
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
+import pytz
 
 import requests
 from flask import Flask, request, jsonify
@@ -56,7 +57,7 @@ HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
 
 # ===================== PARÂMETROS ============================
 HT_WINDOW = (29.8, 42)   # Janela HT (mais ampla e com tolerância)
-FT_WINDOW = (68.8, 93)   # Janela FT (mais ampla e com tolerância)
+FT_WINDOW = (69.8, 93)   # Janela FT (mais ampla e com tolerância)
 
 # Thresholds mais sensíveis (ajuste fino)
 MIN_PRESSURE_SCORE = 0.18
@@ -86,7 +87,7 @@ def escape_markdown(text: Any) -> str:
     return re.sub(MDV2_SPECIALS, lambda m: "\\" + m.group(0), s)
 
 # ============================ FLASK ===========================
-app = Flask(__name__)
+app = Flask(_name_)
 
 @app.route('/', methods=['GET'])
 def root():
@@ -168,9 +169,15 @@ def _tg_send(chat_id: str, text: str):
 
     def _post(parse_mode=None, body_text=None):
         payload = {
-            "chat_id": chat_id,
-            "text": body_text if body_text is not None else text,
-            "disable_web_page_preview": True
+    "chat_id": chat_id,
+    "text": text,
+    "parse_mode": "MarkdownV2",
+    "disable_web_page_preview": True
+}
+
+# Força escape extra no link, só pra evitar quebra de linha ou erro
+if "http" in text:
+    text = text.replace("(", "\\(").replace(")", "\\)").replace("+", "%2B")
         }
         if parse_mode:
             payload["parse_mode"] = parse_mode
@@ -435,7 +442,7 @@ def build_bet365_link(fixture: Dict[str, Any]) -> str:
     away = fixture.get('teams', {}).get('away', {}).get('name', '') or ''
     league = fixture.get('league', {}).get('name', '') or ''
     query = f"site:bet365.com {home} x {away} {league}"
-    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
+    return f"https://www.google.com/search?q={urllib.parse.quote_plus(home + ' vs ' + away + ' bet365 corners')}"
 
 def build_vip_message(fixture: Dict[str, Any], strategy_title: str, metrics: Dict[str, Any],
                       best_lines: List[Dict[str, float]]) -> str:
@@ -501,7 +508,7 @@ def should_notify(fixture_id: int, signal_key: str) -> bool:
 # ========================= MÉTRICAS STATUS ====================
 def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
     global LAST_SCAN_TIME, LAST_API_STATUS, LAST_RATE_USAGE, TOTAL_VARRIDURAS
-    LAST_SCAN_TIME = datetime.now()
+    LAST_SCAN_TIME = datetime.now(pytz.timezone("America/Sao_Paulo"))
     TOTAL_VARRIDURAS += 1
 
     k = { (key or '').lower(): str(val) for key, val in (req_headers or {}).items() }
