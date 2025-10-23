@@ -8,7 +8,7 @@ Bot Escanteios RP VIP Plus — Multi v2 (Econômico) • ULTRA Sensível v3
 - Anti-spam, /status e /debug via webhook do Telegram
 ENV:
 - API_FOOTBALL_KEY, TOKEN, TELEGRAM_CHAT_ID, (opcional) TELEGRAM_ADMIN_ID
-- SCAN_INTERVAL (default 120), RENOTIFY_MINUTES (default 5)
+- SCAN_INTERVAL (default 120), RENOTIFY_MINUTES (default 3)
 """
 
 import os
@@ -35,7 +35,7 @@ TOKEN              = os.getenv('TOKEN')
 TELEGRAM_CHAT_ID   = os.getenv('TELEGRAM_CHAT_ID')
 TELEGRAM_ADMIN_ID  = os.getenv('TELEGRAM_ADMIN_ID')
 SCAN_INTERVAL_BASE = int(os.getenv('SCAN_INTERVAL', '120'))
-RENOTIFY_MINUTES   = int(os.getenv('RENOTIFY_MINUTES', '5'))
+RENOTIFY_MINUTES   = int(os.getenv('RENOTIFY_MINUTES', '3'))
 
 if not API_FOOTBALL_KEY:
     raise ValueError("⚠️ API_FOOTBALL_KEY não definida.")
@@ -55,14 +55,14 @@ API_BASE = "https://v3.football.api-sports.io"
 HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
 
 # ===================== PARÂMETROS ============================
-HT_WINDOW = (30, 42)   # Janela HT (mais ampla)
-FT_WINDOW = (70, 92)   # Janela FT (mais ampla)
+HT_WINDOW = (29.8, 42)   # Janela HT (mais ampla e com tolerância)
+FT_WINDOW = (68.8, 93)   # Janela FT (mais ampla e com tolerância)
 
-# Thresholds sensíveis (modo de teste)
-MIN_PRESSURE_SCORE = 0.20  # mais sensível
-ATTACKS_MIN_SUM    = 12
-DANGER_MIN_SUM     = 6
-MIN_TOTAL_SHOTS    = 5
+# Thresholds mais sensíveis (ajuste fino)
+MIN_PRESSURE_SCORE = 0.18
+ATTACKS_MIN_SUM    = 10
+DANGER_MIN_SUM     = 5
+MIN_TOTAL_SHOTS    = 4
 
 # Estádios "apertados"
 SMALL_STADIUMS = {
@@ -330,6 +330,7 @@ def extract_basic_stats(fixture: Dict[str, Any], stats_resp: List[Dict[str, Any]
                 continue
 
             v = extract_value('pos', t, val)
+                # posse pode vir com %
             if v is not None:
                 target['pos'] = v
                 continue
@@ -537,11 +538,13 @@ def main_loop():
                 fixture_id = fixture.get('fixture', {}).get('id')
                 if not fixture_id:
                     continue
-                minute = fixture.get('fixture', {}).get('status', {}).get('elapsed', 0) or 0
 
-                # Economia: ignorar < 20'
-                if minute < 20:
-                    logger.debug("⏳ Ignorado fixture=%s (min %s < 20')", fixture_id, minute)
+                # Economia: ignorar partidas muito cedo, com tolerância (18.8) e arredondamento
+                minute_raw = fixture.get('fixture', {}).get('status', {}).get('elapsed', 0) or 0
+                minute = round(float(minute_raw), 1)
+
+                if minute < 18.8:
+                    logger.debug("⏳ Ignorado fixture=%s (min %.1f < 18.8')", fixture_id, minute)
                     continue
 
                 stats_resp = get_fixture_statistics(fixture_id)
@@ -619,7 +622,7 @@ if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3")
     try:
         # Mensagem de boot (sem logs privados automáticos)
-        send_telegram_message("🤖 Bot VIP ULTRA ativo\\. Ignorando jogos < 20' e usando pressão dinâmica\\.")
+        send_telegram_message("🤖 Bot VIP ULTRA ativo\\. Ignorando jogos < 18.8' e usando pressão dinâmica\\.")
     except Exception:
         pass
 
