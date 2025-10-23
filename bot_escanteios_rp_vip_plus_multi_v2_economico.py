@@ -4,9 +4,8 @@
 Bot Escanteios RP VIP Plus — Multi v2 (Econômico) • ULTRA Sensível v3
 - Dispara quando qualquer 3 de 5 condições principais forem verdadeiras
 - Thresholds ajustados para teste (mais sensível)
-- Mantém todas as estratégias originais (HT, FT, Campo Pequeno, Jogo Aberto, Favorito em Perigo)
-- Mantém anti-spam, /status e logs
-
+- Mantém estratégias (HT, FT, Campo Pequeno, Jogo Aberto, Favorito em Perigo)
+- Anti-spam, /status e /debug via webhook do Telegram
 ENV:
 - API_FOOTBALL_KEY, TOKEN, TELEGRAM_CHAT_ID, (opcional) TELEGRAM_ADMIN_ID
 - SCAN_INTERVAL (default 120), RENOTIFY_MINUTES (default 5)
@@ -43,11 +42,19 @@ if not API_FOOTBALL_KEY:
 if not TOKEN or not TELEGRAM_CHAT_ID:
     raise ValueError("⚠️ Defina TOKEN e TELEGRAM_CHAT_ID.")
 
-# ===================== API CONFIG ===================
+# ===================== STATUS (antes das rotas) ==============
+START_TIME = int(time.time())
+LAST_SCAN_TIME: Optional[datetime] = None
+LAST_API_STATUS = "⏳ Aguardando..."
+LAST_RATE_USAGE = "0%"
+TOTAL_VARRIDURAS = 0
+total = 0  # jogos na última varredura
+
+# ===================== API CONFIG ============================
 API_BASE = "https://v3.football.api-sports.io"
 HEADERS = {"x-apisports-key": API_FOOTBALL_KEY}
 
-# ===================== PARÂMETROS ====================
+# ===================== PARÂMETROS ============================
 HT_WINDOW = (30, 42)   # Janela HT (mais ampla)
 FT_WINDOW = (70, 92)   # Janela FT (mais ampla)
 
@@ -64,10 +71,10 @@ SMALL_STADIUMS = {
     'bet365 stadium','pride park','liberty stadium','fratton park',
 }
 
-# Anti-spam storage
+# Anti-spam
 sent_signals: Dict[int, Dict[str, float]] = defaultdict(dict)
 
-# Diagnostics
+# Diagnóstico
 request_count = 0
 last_rate_headers: Dict[str, str] = {}
 
@@ -77,6 +84,7 @@ MDV2_SPECIALS = r'[_*\[\]()~`>#+\-=|{}.!]'
 def escape_markdown(text: Any) -> str:
     s = str(text) if text is not None else ""
     return re.sub(MDV2_SPECIALS, lambda m: "\\" + m.group(0), s)
+
 # ============================ FLASK ===========================
 app = Flask(__name__)
 
@@ -89,19 +97,17 @@ def root():
         'renotify_minutes': RENOTIFY_MINUTES
     }), 200
 
-
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok'}), 200
-
 
 # ====================== TELEGRAM WEBHOOK ======================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def telegram_webhook():
     """
     Webhook oficial do Telegram.
-    - Recebe updates de mensagens (privadas e grupos)
-    - Responde a /status e /debug sem quebrar o fluxo do bot
+    - Recebe updates (privados e grupos)
+    - Responde a /status e /debug sem quebrar o loop
     """
     try:
         data = request.get_json(force=True, silent=True) or {}
@@ -111,9 +117,8 @@ def telegram_webhook():
         text = (message.get('text') or '').strip().lower()
         chat_id = str(message.get('chat', {}).get('id', TELEGRAM_CHAT_ID))
 
-        # --- Comando /status ---
+        # --- /status ---
         if text == '/status':
-            from datetime import datetime
             uptime = int(time.time() - START_TIME)
             horas = uptime // 3600
             minutos = (uptime % 3600) // 60
@@ -122,6 +127,8 @@ def telegram_webhook():
             varreduras = globals().get("TOTAL_VARRIDURAS", 0)
             api_status = globals().get("LAST_API_STATUS", "✅ OK")
             uso_api = globals().get("LAST_RATE_USAGE", "Indefinido")
+            last_scan_dt: Optional[datetime] = globals().get("LAST_SCAN_TIME")
+            last_scan_txt = last_scan_dt.strftime("%H:%M:%S") if last_scan_dt else "Ainda não realizada"
 
             resposta = (
                 "📊 Status Bot Escanteios RP VIP Plus\n"
@@ -129,6 +136,7 @@ def telegram_webhook():
                 f"🕒 Tempo online: {horas}h {minutos}min\n"
                 f"⚽ Jogos varridos: {total_jogos}\n"
                 f"🔁 Varreduras realizadas: {varreduras}\n"
+                f"⏱️ Última varredura: {last_scan_txt}\n"
                 f"🌐 Status API: {api_status}\n"
                 f"📉 Uso da API: {uso_api}\n"
                 "━━━━━━━━━━━━━━━━━━━\n"
@@ -137,12 +145,12 @@ def telegram_webhook():
             _tg_send(chat_id, resposta)
             logger.info("📨 /status respondido com sucesso (%s)", chat_id)
 
-        # --- Comando /debug ---
+        # --- /debug ---
         elif text == '/debug':
             resposta = (
-                "🧩 Modo Debug ativo\n"
+                "🧩 Modo Debug\n"
                 f"📦 Requests enviados: {request_count}\n"
-                f"⏱ Último intervalo: {SCAN_INTERVAL_BASE}s\n"
+                f"⏱ Intervalo base: {SCAN_INTERVAL_BASE}s\n"
                 f"📡 Headers API: {last_rate_headers}"
             )
             _tg_send(chat_id, resposta)
@@ -151,10 +159,10 @@ def telegram_webhook():
     except Exception as e:
         logger.exception("❌ Erro no processamento do webhook: %s", e)
 
-    # ⚠️ Sempre retornar 200 para evitar bloqueio do Telegram
+    # Sempre 200 OK
     return jsonify({"ok": True}), 200
 
-# ====================== TELEGRAM HELPERS =====================
+# ====================== TELEGRAM HELPERS ======================
 def _tg_send(chat_id: str, text: str):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "MarkdownV2", "disable_web_page_preview": True}
@@ -336,7 +344,7 @@ def pressure_score_vip(home: Dict[str, int], away: Dict[str, int]) -> Tuple[floa
         except Exception:
             return 0.0
 
-    # somatórios (filtro mínimo) — aqui bem permissivo
+    # somatórios mínimos — permissivo
     if (home['attacks'] + away['attacks']) < 1 or (home['danger'] + away['danger']) < 1:
         return 0.0, 0.0
 
@@ -369,7 +377,7 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]) 
     if 70 <= minuto <= 88 and home_gols < away_gols and press_home >= MIN_PRESSURE_SCORE:
         sinais.append("Estratégia FT - Reação da Casa")
 
-    # 3) FT - Over Cantos 2º Tempo (70–90, pressão de qualquer lado + cantos totais ainda baixos)
+    # 3) FT - Over Cantos 2º Tempo (70–90, pressão de qualquer lado + cantos ainda baixos)
     if 70 <= minuto <= 90 and max(press_home, press_away) >= MIN_PRESSURE_SCORE and total_cantos <= 8:
         sinais.append("Estratégia FT - Over Cantos 2º Tempo")
 
@@ -381,7 +389,7 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]) 
     if minuto >= 30 and press_home >= 0.30 and press_away >= 0.30:
         sinais.append("Estratégia Jogo Aberto (Ambos pressionam)")
 
-    # 6) Favorito em Perigo (lado mais pressionando está perdendo)
+    # 6) Favorito em Perigo (mais pressiona, mas perde)
     if 35 <= minuto <= 80:
         if press_home > press_away + 0.10 and home_gols < away_gols:
             sinais.append("Favorito em Perigo (Casa)")
@@ -397,14 +405,14 @@ def composite_trigger_check(fixture: Dict[str, Any], metrics: Dict[str, Any]) ->
     home_g = fixture.get('goals', {}).get('home', 0) or 0
     away_g = fixture.get('goals', {}).get('away', 0) or 0
 
-    cond_attacks = (metrics['home_attacks'] + metrics['away_attacks']) >= ATTACKS_MIN_SUM
-    cond_danger  = (metrics['home_danger'] + metrics['away_danger'])   >= DANGER_MIN_SUM
-    cond_pressure= max(metrics['press_home'], metrics['press_away'])    >= MIN_PRESSURE_SCORE
-    cond_score   = (home_g == away_g) or (
+    cond_attacks  = (metrics['home_attacks'] + metrics['away_attacks']) >= ATTACKS_MIN_SUM
+    cond_danger   = (metrics['home_danger']  + metrics['away_danger'])  >= DANGER_MIN_SUM
+    cond_pressure = max(metrics['press_home'], metrics['press_away'])    >= MIN_PRESSURE_SCORE
+    cond_score    = (home_g == away_g) or (
         (metrics['press_home'] > metrics['press_away'] and home_g < away_g) or
         (metrics['press_away'] > metrics['press_home'] and away_g < home_g)
     )
-    cond_window  = (HT_WINDOW[0] <= minute <= HT_WINDOW[1]) or (FT_WINDOW[0] <= minute <= FT_WINDOW[1])
+    cond_window   = (HT_WINDOW[0] <= minute <= HT_WINDOW[1]) or (FT_WINDOW[0] <= minute <= FT_WINDOW[1])
 
     true_count = sum([cond_attacks, cond_danger, cond_pressure, cond_score, cond_window])
     logger.debug("Composite: attacks=%s danger=%s pressure=%s score=%s window=%s -> %d/5",
@@ -464,7 +472,7 @@ def build_vip_message(fixture: Dict[str, Any], strategy_title: str, metrics: Dic
         f"🥅 Chutes: H:{home_sh}  A:{away_sh}  \\|  🎯 Posse: H:{home_pos}%  A:{away_pos}%",
         f"📊 Pressão: H:{press_home}  A:{press_away}  \\|  🏟 Estádio pequeno: {stadium_small}",
         "",
-        "Top linhas sugeridas \\(Poisson\\)\\:",
+        "Top linhas sugeridas \\(Poisson\\):",
         *lines_txt,
         "",
         f"🔗 Bet365: {bet_link}",
@@ -480,76 +488,34 @@ def should_notify(fixture_id: int, signal_key: str) -> bool:
         return True
     return False
 
-# ========================= STATUS VIP ==========================
-START_TIME = datetime.now()
-LAST_SCAN_TIME = None
-LAST_API_STATUS = "⏳ Aguardando..."
-LAST_RATE_USAGE = "0%"
-TOTAL_VARRIDURAS = 0
-
-def get_status_message():
-    try:
-        uptime = datetime.now() - START_TIME
-        horas, resto = divmod(uptime.seconds, 3600)
-        minutos, _ = divmod(resto, 60)
-        jogos = globals().get("total", 0)
-        varridas = globals().get("TOTAL_VARRIDURAS", 0)
-        last_scan = globals().get("LAST_SCAN_TIME")
-        last_scan_txt = last_scan.strftime("%H:%M:%S") if last_scan else "Ainda não realizada"
-        api_status = globals().get("LAST_API_STATUS", "✅ OK")
-        rate_usage = globals().get("LAST_RATE_USAGE", "0%")
-        msg = (
-            "📊 Status Bot Escanteios RP VIP Plus\n"
-            "━━━━━━━━━━━━━━━━━━━\n"
-            f"🕒 Tempo online: {horas}h {minutos}min\n"
-            f"⚽ Jogos varridos: {jogos}\n"
-            f"🔁 Varreduras realizadas: {varridas}\n"
-            f"⏱️ Última varredura: {last_scan_txt}\n"
-            f"🧮 Próxima varredura: {SCAN_INTERVAL_BASE}s\n"
-            f"🌐 Status API: {api_status}\n"
-            f"📉 Uso da API: {rate_usage}\n"
-            "━━━━━━━━━━━━━━━━━━━\n"
-            "🤖 Versão Multi v2 Econômico ULTRA Sensível v3"
-        )
-        return msg
-    except Exception as e:
-        return f"❌ Erro ao gerar status: {e}"
-
-def atualizar_metricas(loop_total, req_headers):
+# ========================= MÉTRICAS STATUS ====================
+def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
     global LAST_SCAN_TIME, LAST_API_STATUS, LAST_RATE_USAGE, TOTAL_VARRIDURAS
     LAST_SCAN_TIME = datetime.now()
     TOTAL_VARRIDURAS += 1
+
     k = { (key or '').lower(): str(val) for key, val in (req_headers or {}).items() }
+
     if 'x-ratelimit-minutely-remaining' in k and 'x-ratelimit-minutely-limit' in k:
         try:
-            restante = int(k.get('x-ratelimit-minutely-remaining','0'))
-            limite   = int(k.get('x-ratelimit-minutely-limit','1'))
-            uso = 100 - int((restante / max(1,limite)) * 100)
+            restante = int(k.get('x-ratelimit-minutely-remaining','0') or '0')
+            limite   = int(k.get('x-ratelimit-minutely-limit','1') or '1')
+            uso = 100 - int((restante / max(1, limite)) * 100)
             LAST_RATE_USAGE = f"{uso}% usado"
             LAST_API_STATUS = "✅ OK" if uso < 90 else "⚠️ Alto consumo"
         except Exception:
             LAST_API_STATUS = "⚠️ Cabeçalhos inválidos"
             LAST_RATE_USAGE = "Indefinido"
     else:
-        LAST_API_STATUS = "❌ Sem cabeçalhos \\(erro API\\)"
+        LAST_API_STATUS = "⚠️ Cabeçalhos ausentes"
         LAST_RATE_USAGE = "Indefinido"
-
-@app.route(f"/{TOKEN}/status", methods=["POST"])
-def telegram_status_webhook():
-    data = request.get_json() or {}
-    message = data.get("message", {})
-    text = (message.get("text", "") or "").strip().lower()
-    if text == "/status":
-        status_msg = get_status_message()
-        send_telegram_message(status_msg)
-    return jsonify({"ok": True})
 
 # ========================= MAIN LOOP ==========================
 def main_loop():
     logger.info("🔁 Loop econômico iniciado. Base: %ss (renotify=%s min).", SCAN_INTERVAL_BASE, RENOTIFY_MINUTES)
     logger.info("🟢 Loop econômico ativo: aguardando jogos ao vivo...")
 
-    global total  # para /status
+    global total
     signals_sent = 0
 
     while True:
@@ -573,7 +539,7 @@ def main_loop():
                     continue
                 minute = fixture.get('fixture', {}).get('status', {}).get('elapsed', 0) or 0
 
-                # ECONOMIA: ignorar < 25'
+                # Economia: ignorar < 25'
                 if minute < 25:
                     logger.debug("⏳ Ignorado fixture=%s (min %s < 25')", fixture_id, minute)
                     continue
@@ -587,6 +553,8 @@ def main_loop():
                 press_home, press_away = pressure_score_vip(home, away)
 
                 total_corners = (home['corners'] or 0) + (away['corners'] or 0)
+                total_shots   = (home['shots'] or 0) + (away['shots'] or 0)
+
                 metrics = {
                     'minute': minute,
                     'home_corners': home['corners'], 'away_corners': away['corners'],
@@ -595,50 +563,48 @@ def main_loop():
                     'home_shots': home['shots'],     'away_shots': away['shots'],
                     'home_pos': home['pos'],         'away_pos': away['pos'],
                     'press_home': press_home,        'press_away': press_away,
-                    'small_stadium': (fixture.get('fixture', {}).get('venue', {}).get('name', '') or '').lower() in SMALL_STADIUMS,
-                    'total_corners': total_corners
+                    'small_stadium': (fixture.get('fixture', {}).get('venue', {}).get('name', '').lower() in SMALL_STADIUMS),
+                    'total_corners': total_corners,
+                    'total_shots': total_shots
                 }
 
-                # Estratégias específicas
                 estrategias = verificar_estrategias_vip(fixture, metrics)
+                composite_ok = composite_trigger_check(fixture, metrics)
 
-                # Disparo composto (3/5) — não depende da lista acima
-                trigger_ok = composite_trigger_check(fixture, metrics)
-
-                if not estrategias and not trigger_ok:
-                    logger.debug("IGNORADO fixture=%s min=%s press(H/A)=%.2f/%.2f cantos=%s",
-                                 fixture_id, minute, press_home, press_away, total_corners)
+                if not estrategias and not composite_ok:
+                    logger.debug("IGNORADO fixture=%s minuto=%s | press(H)=%.2f/A=%.2f | att=%s | dang=%s | shots=%s",
+                                 fixture_id, minute, press_home, press_away,
+                                 metrics['home_attacks']+metrics['away_attacks'],
+                                 metrics['home_danger']+metrics['away_danger'],
+                                 total_shots)
                     continue
 
-                # Se houver, envia as específicas
+                # Mensagem Poisson (lam heurístico, ajuste se quiser)
                 best_lines = evaluate_candidate_lines(total_corners, lam=1.5)
-                for strat_title in estrategias:
+
+                if estrategias:
+                    for strat_title in estrategias:
+                        signal_key = f"{strat_title}_{total_corners}"
+                        if should_notify(fixture_id, signal_key):
+                            msg = build_vip_message(fixture, strat_title, metrics, best_lines)
+                            send_telegram_message(msg)
+                            signals_sent += 1
+                            logger.info("📤 Sinal [%s] fixture=%s minuto=%s", strat_title, fixture_id, minute)
+                elif composite_ok:
+                    strat_title = "Setup 3/5 — Asiáticos/Limite"
                     signal_key = f"{strat_title}_{total_corners}"
                     if should_notify(fixture_id, signal_key):
                         msg = build_vip_message(fixture, strat_title, metrics, best_lines)
                         send_telegram_message(msg)
-                        logger.info("📤 Sinal enviado [%s] fixture=%s minuto=%s", strat_title, fixture_id, minute)
                         signals_sent += 1
-                        if TELEGRAM_ADMIN_ID:
-                            send_admin_message(f"✅ {strat_title} | {fixture.get('teams',{}).get('home',{}).get('name','?')} x {fixture.get('teams',{}).get('away',{}).get('name','?')} | {minute}'")
-
-                # E também o gatilho composto genérico
-                if trigger_ok:
-                    signal_key = f"Trigger 3-de-5_{total_corners}"
-                    if should_notify(fixture_id, signal_key):
-                        msg = build_vip_message(fixture, "Trigger 3\\-de\\-5", metrics, best_lines)
-                        send_telegram_message(msg)
-                        logger.info("📤 Sinal enviado [Trigger 3-de-5] fixture=%s minuto=%s", fixture_id, minute)
-                        signals_sent += 1
-                        if TELEGRAM_ADMIN_ID:
-                            send_admin_message(f"✅ Trigger 3-de-5 | {fixture.get('teams',{}).get('home',{}).get('name','?')} x {fixture.get('teams',{}).get('away',{}).get('name','?')} | {minute}'")
+                        logger.info("📤 Sinal [3/5 Composite] fixture=%s minuto=%s", fixture_id, minute)
 
             # Resumo da varredura
             try:
                 logger.info("📊 Resumo: %d jogos analisados | %d sinais enviados | próxima em %ds",
                             total, signals_sent, scan_interval)
-                signals_sent = 0
                 atualizar_metricas(total, last_rate_headers)
+                signals_sent = 0
             except Exception as e:
                 logger.exception("Erro ao finalizar resumo da varredura: %s", e)
 
@@ -652,15 +618,11 @@ def main_loop():
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3")
     try:
-        boot = (
-            "🤖 Bot VIP ULTRA ativo\\. Ignorando jogos < 25' e usando pressão dinâmica\\.\n"
-            "🧠 Modo sensível: dispara quando 3 de 5 condições batem\\."
-        )
-        send_telegram_message(boot)
-        if TELEGRAM_ADMIN_ID:
-            send_admin_message("🔐 Logs privados habilitados\\.")
+        # Mensagem de boot (sem logs privados automáticos)
+        send_telegram_message("🤖 Bot VIP ULTRA ativo\\. Ignorando jogos < 20' e usando pressão dinâmica\\.")
     except Exception:
         pass
+
     t = threading.Thread(target=main_loop, daemon=True)
     t.start()
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", 10000)), debug=False)
