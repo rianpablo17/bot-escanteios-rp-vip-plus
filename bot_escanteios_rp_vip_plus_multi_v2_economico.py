@@ -77,38 +77,42 @@ MDV2_SPECIALS = r'[_*\[\]()~`>#+\-=|{}.!]'
 def escape_markdown(text: Any) -> str:
     s = str(text) if text is not None else ""
     return re.sub(MDV2_SPECIALS, lambda m: "\\" + m.group(0), s)
-
 # ============================ FLASK ===========================
 app = Flask(__name__)
 
 @app.route('/', methods=['GET'])
 def root():
-    return jsonify({'status': 'ok', 'service': 'Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3',
-                    'scan_interval_base': SCAN_INTERVAL_BASE, 'renotify_minutes': RENOTIFY_MINUTES}), 200
+    return jsonify({
+        'status': 'ok',
+        'service': 'Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3',
+        'scan_interval_base': SCAN_INTERVAL_BASE,
+        'renotify_minutes': RENOTIFY_MINUTES
+    }), 200
+
 
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'ok'}), 200
 
+
 # ====================== TELEGRAM WEBHOOK ======================
 @app.route(f'/{TOKEN}', methods=['POST'])
 def telegram_webhook():
     """
-    Webhook do Telegram:
-    - Responde ao comando /status diretamente no chat.
-    - Mantém o retorno padrão do Render (para health checks).
+    Webhook oficial do Telegram.
+    - Recebe updates de mensagens (privadas e grupos)
+    - Responde a /status e /debug sem quebrar o fluxo do bot
     """
-    data = request.get_json(force=True, silent=True) or {}
-    logger.debug("Update Telegram (webhook): %s", str(data)[:500])
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        logger.debug("📩 Update Telegram recebido: %s", str(data)[:500])
 
-    # Extrai mensagem e dados básicos
-    message = data.get('message', {}) or {}
-    text = (message.get('text') or '').strip().lower()
-    chat_id = str(message.get('chat', {}).get('id', TELEGRAM_CHAT_ID))
+        message = data.get('message') or data.get('edited_message') or {}
+        text = (message.get('text') or '').strip().lower()
+        chat_id = str(message.get('chat', {}).get('id', TELEGRAM_CHAT_ID))
 
-    # Responde ao comando /status
-    if text == '/status':
-        try:
+        # --- Comando /status ---
+        if text == '/status':
             from datetime import datetime
             uptime = int(time.time() - START_TIME)
             horas = uptime // 3600
@@ -130,14 +134,24 @@ def telegram_webhook():
                 "━━━━━━━━━━━━━━━━━━━\n"
                 "🤖 Versão: Multi v2 Econômico ULTRA Sensível v3"
             )
-
             _tg_send(chat_id, resposta)
-            logger.info("📨 /status respondido com sucesso para chat %s", chat_id)
+            logger.info("📨 /status respondido com sucesso (%s)", chat_id)
 
-        except Exception as e:
-            logger.exception("Erro ao responder /status: %s", e)
-            _tg_send(chat_id, "❌ Erro ao gerar status, tente novamente em instantes.")
+        # --- Comando /debug ---
+        elif text == '/debug':
+            resposta = (
+                "🧩 Modo Debug ativo\n"
+                f"📦 Requests enviados: {request_count}\n"
+                f"⏱ Último intervalo: {SCAN_INTERVAL_BASE}s\n"
+                f"📡 Headers API: {last_rate_headers}"
+            )
+            _tg_send(chat_id, resposta)
+            logger.info("📨 /debug respondido com sucesso (%s)", chat_id)
 
+    except Exception as e:
+        logger.exception("❌ Erro no processamento do webhook: %s", e)
+
+    # ⚠️ Sempre retornar 200 para evitar bloqueio do Telegram
     return jsonify({"ok": True}), 200
 
 # ====================== TELEGRAM HELPERS =====================
