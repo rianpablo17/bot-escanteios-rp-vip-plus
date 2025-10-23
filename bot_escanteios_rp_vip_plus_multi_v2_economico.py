@@ -442,9 +442,9 @@ def build_bet365_link(fixture: Dict[str, Any]) -> str:
     Gera link de busca no Google para Bet365 do jogo atual.
     Mantém robustez (funciona para qualquer usuário/região).
     """
-    home = fixture.get('teams', {}).get('home', {}).get('name', '') or ''
-    away = fixture.get('teams', {}).get('away', {}).get('name', '') or ''
-    league = fixture.get('league', {}).get('name', '') or ''
+    home = fixture.get("teams", {}).get("home", {}).get("name", "") or ""
+    away = fixture.get("teams", {}).get("away", {}).get("name", "") or ""
+    league = fixture.get("league", {}).get("name", "") or ""
     query = f"site:bet365.com {home} x {away} {league}"
     return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
 
@@ -458,29 +458,29 @@ def build_vip_message(
     """
     Monta mensagem premium, formatada e segura para MarkdownV2 no Telegram.
     """
-    teams = fixture.get('teams', {}) or {}
-    home = escape_markdown(teams.get('home', {}).get('name', '?'))
-    away = escape_markdown(teams.get('away', {}).get('name', '?'))
+    teams = fixture.get("teams", {}) or {}
+    home = escape_markdown(teams.get("home", {}).get("name", "?"))
+    away = escape_markdown(teams.get("away", {}).get("name", "?"))
 
-    minute = escape_markdown(metrics.get('minute', 0))
-    goals = fixture.get('goals', {}) or {}
+    minute = escape_markdown(metrics.get("minute", 0))
+    goals = fixture.get("goals", {}) or {}
     score = escape_markdown(f"{goals.get('home', '-')} x {goals.get('away', '-')}")
 
-    total_corners = escape_markdown(metrics.get('total_corners'))
-    home_c = escape_markdown(metrics.get('home_corners'))
-    away_c = escape_markdown(metrics.get('away_corners'))
-    home_att = escape_markdown(metrics.get('home_attacks'))
-    away_att = escape_markdown(metrics.get('away_attacks'))
-    home_d = escape_markdown(metrics.get('home_danger'))
-    away_d = escape_markdown(metrics.get('away_danger'))
-    home_sh = escape_markdown(metrics.get('home_shots'))
-    away_sh = escape_markdown(metrics.get('away_shots'))
-    home_pos = escape_markdown(metrics.get('home_pos'))
-    away_pos = escape_markdown(metrics.get('away_pos'))
+    total_corners = escape_markdown(metrics.get("total_corners"))
+    home_c = escape_markdown(metrics.get("home_corners"))
+    away_c = escape_markdown(metrics.get("away_corners"))
+    home_att = escape_markdown(metrics.get("home_attacks"))
+    away_att = escape_markdown(metrics.get("away_attacks"))
+    home_d = escape_markdown(metrics.get("home_danger"))
+    away_d = escape_markdown(metrics.get("away_danger"))
+    home_sh = escape_markdown(metrics.get("home_shots"))
+    away_sh = escape_markdown(metrics.get("away_shots"))
+    home_pos = escape_markdown(metrics.get("home_pos"))
+    away_pos = escape_markdown(metrics.get("away_pos"))
 
     press_home = escape_markdown(f"{metrics['press_home']:.2f}")
     press_away = escape_markdown(f"{metrics['press_away']:.2f}")
-    stadium_small = "✅" if metrics.get('small_stadium') else "❌"
+    stadium_small = "✅" if metrics.get("small_stadium") else "❌"
     strategy_title_md = escape_markdown(strategy_title)
 
     # Top linhas (Poisson) — até 3
