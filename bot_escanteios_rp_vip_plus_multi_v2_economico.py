@@ -172,11 +172,11 @@ def _tg_send(
 ) -> None:
     """
     Envia mensagem ao Telegram com segurança.
-    Se MarkdownV2 falhar, reenvia como texto simples.
+    Se MarkdownV2 falhar, reenvia automaticamente como texto simples.
     """
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-    # Escapa caracteres especiais se for MarkdownV2
+    # Escapa caracteres especiais apenas se for MarkdownV2
     if parse_mode == "MarkdownV2":
         safe_text = (
             str(text)
@@ -208,13 +208,16 @@ def _tg_send(
         "text": safe_text,
         "disable_web_page_preview": disable_web_page_preview,
     }
+
     if parse_mode:
         payload["parse_mode"] = parse_mode
 
     try:
         r = requests.post(url, json=payload, timeout=20)
         if r.status_code != 200:
-            logger.warning("MarkdownV2 falhou (%s). Reenviando como texto simples...", r.status_code)
+            logger.warning(
+                "⚠️ MarkdownV2 falhou (%s). Reenviando como texto simples...", r.status_code
+            )
             fallback_payload = {
                 "chat_id": chat_id,
                 "text": str(text),
@@ -222,66 +225,92 @@ def _tg_send(
             }
             requests.post(url, json=fallback_payload, timeout=20)
     except Exception as e:
-        logger.exception("Erro ao enviar Telegram: %s", e)
+        logger.exception("Erro ao enviar mensagem para o Telegram: %s", e)
 
 
 def send_telegram_message(text: str) -> None:
+    """Envia com MarkdownV2 (para mensagens formatadas, status etc)."""
     _tg_send(TELEGRAM_CHAT_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
 
 def send_telegram_message_plain(text: str) -> None:
-    """Versão sem Markdown, ideal para sinais limpos."""
+    """Versão sem Markdown — ideal para sinais limpos."""
     _tg_send(TELEGRAM_CHAT_ID, text, parse_mode=None, disable_web_page_preview=True)
 
 
 def send_admin_message(text: str) -> None:
+    """Envio direto ao admin (com Markdown)."""
     if TELEGRAM_ADMIN_ID:
         _tg_send(TELEGRAM_ADMIN_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
-
 # ===================== API CALLS =====================
-def safe_request(url: str, headers: Dict[str, str], params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+
+def safe_request(
+    url: str,
+    headers: Dict[str, str],
+    params: Dict[str, Any] = None
+) -> Optional[Dict[str, Any]]:
     """
-    Executa uma requisição segura à API-Football e retorna o JSON (ou None em caso de erro).
+    Executa uma requisição segura à API-Football e retorna o JSON decodificado.
+    Retorna None em caso de erro, timeout ou status inesperado.
     """
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         if response.status_code == 200:
             return response.json()
-        else:
-            logger.warning("⚠️ Erro API-Football %s: %s", response.status_code, response.text)
-            return None
+        logger.warning("⚠️ Erro API-Football %s: %s", response.status_code, response.text)
+        return None
+    except requests.exceptions.Timeout:
+        logger.warning("⚠️ Timeout na requisição para %s", url)
+        return None
     except Exception as e:
         logger.exception("Erro em safe_request: %s", e)
         return None
 
 
-def get_live_fixtures():
+def get_live_fixtures() -> List[Dict[str, Any]]:
+    """
+    Retorna as partidas que estão ao vivo no momento.
+    """
     try:
         url = f"{API_BASE}/fixtures"
         params = {"live": "all"}
         data = safe_request(url, headers=HEADERS, params=params)
+
         if not data:
             logger.warning("⚠️ Erro ao buscar fixtures ao vivo (sem resposta ou falha na API)")
             return []
-        return data.get("response", []) or []
+
+        fixtures = data.get("response", [])
+        logger.debug("📡 %d partidas ao vivo encontradas.", len(fixtures))
+        return fixtures
+
     except Exception as e:
         logger.exception("Erro em get_live_fixtures: %s", e)
         return []
 
 
-def get_fixture_statistics(fixture_id):
+def get_fixture_statistics(fixture_id: int) -> Optional[List[Dict[str, Any]]]:
+    """
+    Retorna as estatísticas de uma partida específica.
+    """
     try:
         url = f"{API_BASE}/fixtures/statistics"
         params = {"fixture": fixture_id}
         data = safe_request(url, headers=HEADERS, params=params)
+
         if not data:
             logger.warning("⚠️ Erro em fixtures/statistics (sem resposta ou falha na API)")
             return None
-        return data.get("response", [])
+
+        stats = data.get("response", [])
+        if not stats:
+            logger.debug("Sem estatísticas para fixture=%s no momento.", fixture_id)
+
+        return stats
+
     except Exception as e:
         logger.exception("Erro em get_fixture_statistics: %s", e)
         return None
-
 # ===================== POISSON =====================
 def poisson_pmf(k: int, lam: float) -> float:
     try:
