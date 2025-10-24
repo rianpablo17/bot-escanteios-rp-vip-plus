@@ -229,6 +229,11 @@ def send_telegram_message(text: str) -> None:
     _tg_send(TELEGRAM_CHAT_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
 
+def send_telegram_message_plain(text: str) -> None:
+    """Versão sem Markdown, ideal para sinais limpos."""
+    _tg_send(TELEGRAM_CHAT_ID, text, parse_mode=None, disable_web_page_preview=True)
+
+
 def send_admin_message(text: str) -> None:
     if TELEGRAM_ADMIN_ID:
         _tg_send(TELEGRAM_ADMIN_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
@@ -459,15 +464,11 @@ def composite_trigger_check(fixture: Dict[str, Any], metrics: Dict[str, Any]) ->
                  cond_attacks, cond_danger, cond_pressure, cond_score, cond_window, true_count)
     return true_count >= 3
 
-# ===================== VIP MESSAGE / LINKS =====================
+# ===================== VIP MESSAGE / LINKS (PLAIN TEXT LIMPO) =====================
 def build_bet365_link(fixture: Dict[str, Any]) -> str:
-    """
-    Gera link de busca no Google para Bet365 do jogo atual.
-    Mantém robustez (funciona para qualquer usuário/região).
-    """
-    home = fixture.get("teams", {}).get("home", {}).get("name", "") or ""
-    away = fixture.get("teams", {}).get("away", {}).get("name", "") or ""
-    league = fixture.get("league", {}).get("name", "") or ""
+    home = (fixture.get("teams", {}) or {}).get("home", {}).get("name", "") or ""
+    away = (fixture.get("teams", {}) or {}).get("away", {}).get("name", "") or ""
+    league = (fixture.get("league", {}) or {}).get("name", "") or ""
     query = f"site:bet365.com {home} x {away} {league}"
     return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
 
@@ -476,35 +477,36 @@ def build_vip_message(
     fixture: Dict[str, Any],
     strategy_title: str,
     metrics: Dict[str, Any],
-    best_lines: List[Dict[str, float]]
+    best_lines: List[Dict[str, float]],
 ) -> str:
-    """
-    Monta mensagem premium, formatada e segura para MarkdownV2 no Telegram.
-    """
     teams = fixture.get("teams", {}) or {}
-    home = escape_markdown(teams.get("home", {}).get("name", "?"))
-    away = escape_markdown(teams.get("away", {}).get("name", "?"))
+    home = (teams.get("home", {}) or {}).get("name", "?") or "?"
+    away = (teams.get("away", {}) or {}).get("name", "?") or "?"
 
-    minute = escape_markdown(metrics.get("minute", 0))
+    # Minuto como número com 1 casa, quando possível
+    minute_val = metrics.get("minute", 0)
+    try:
+        minute_txt = f"{float(minute_val):.1f}"
+    except Exception:
+        minute_txt = str(minute_val)
+
     goals = fixture.get("goals", {}) or {}
-    score = escape_markdown(f"{goals.get('home', '-')} x {goals.get('away', '-')}")
+    score = f"{goals.get('home', '-')} x {goals.get('away', '-')}"
 
-    total_corners = escape_markdown(metrics.get("total_corners"))
-    home_c = escape_markdown(metrics.get("home_corners"))
-    away_c = escape_markdown(metrics.get("away_corners"))
-    home_att = escape_markdown(metrics.get("home_attacks"))
-    away_att = escape_markdown(metrics.get("away_attacks"))
-    home_d = escape_markdown(metrics.get("home_danger"))
-    away_d = escape_markdown(metrics.get("away_danger"))
-    home_sh = escape_markdown(metrics.get("home_shots"))
-    away_sh = escape_markdown(metrics.get("away_shots"))
-    home_pos = escape_markdown(metrics.get("home_pos"))
-    away_pos = escape_markdown(metrics.get("away_pos"))
-
-    press_home = escape_markdown(f"{metrics['press_home']:.2f}")
-    press_away = escape_markdown(f"{metrics['press_away']:.2f}")
+    total_corners = metrics.get("total_corners", 0)
+    home_c = metrics.get("home_corners", 0)
+    away_c = metrics.get("away_corners", 0)
+    home_att = metrics.get("home_attacks", 0)
+    away_att = metrics.get("away_attacks", 0)
+    home_d = metrics.get("home_danger", 0)
+    away_d = metrics.get("away_danger", 0)
+    home_sh = metrics.get("home_shots", 0)
+    away_sh = metrics.get("away_shots", 0)
+    home_pos = metrics.get("home_pos", 0)
+    away_pos = metrics.get("away_pos", 0)
+    press_home = f"{metrics.get('press_home', 0.0):.2f}"
+    press_away = f"{metrics.get('press_away', 0.0):.2f}"
     stadium_small = "✅" if metrics.get("small_stadium") else "❌"
-    strategy_title_md = escape_markdown(strategy_title)
 
     # Top linhas (Poisson) — até 3
     lines_txt = []
@@ -512,32 +514,24 @@ def build_vip_message(
         line = f"{ln.get('line', 0):.1f}"
         pwin = f"{ln.get('p_win', 0.0) * 100:.0f}"
         ppush = f"{ln.get('p_push', 0.0) * 100:.0f}"
-        lines_txt.append(
-            f"🎯 Linha {escape_markdown(line)} → Win {escape_markdown(pwin)}% \\| Push {escape_markdown(ppush)}%"
-        )
+        lines_txt.append(f"Linha {line} → Win {pwin}% | Push {ppush}%")
 
     bet_link = build_bet365_link(fixture)
 
     parts = [
-        f"📣 Alerta Estratégia: {strategy_title_md}",
-        "━━━━━━━━━━━━━━━━━━━",
+        f"📣 {strategy_title}",
         f"🏟 Jogo: {home} x {away}",
-        f"⏱ Minuto: {minute}'  \\|  ⚽ Placar: {score}",
-        f"⛳ Cantos: {total_corners} \\(H:{home_c} \\- A:{away_c}\\)",
-        "━━━━━━━━━━━━━━━━━━━",
-        f"⚡ Ataques: H:{home_att} / A:{away_att}",
-        f"🔥 Perigosos: H:{home_d} / A:{away_d}",
-        f"🥅 Chutes: H:{home_sh} / A:{away_sh}",
-        f"🎯 Posse: H:{home_pos}% / A:{away_pos}%",
-        f"📊 Pressão: H:{press_home} / A:{press_away}",
-        f"🏟 Estádio pequeno: {stadium_small}",
-        "━━━━━━━━━━━━━━━━━━━",
-        "🏁 Top Linhas \\(Poisson\\):",
+        f"⏱ Minuto: {minute_txt} | ⚽ Placar: {score}",
+        f"⛳ Cantos: {total_corners} (H:{home_c} - A:{away_c})",
+        f"⚡ Ataques: H:{home_att}  A:{away_att} | 🔥 Perigosos: H:{home_d}  A:{away_d}",
+        f"🥅 Chutes: H:{home_sh}  A:{away_sh} | 🎯 Posse: H:{home_pos}%  A:{away_pos}%",
+        f"📊 Pressão: H:{press_home}  A:{press_away} | 🏟 Estádio pequeno: {stadium_small}",
+        "",
+        "Top linhas sugeridas (Poisson):",
         *lines_txt,
-        "━━━━━━━━━━━━━━━━━━━",
+        "",
         f"🔗 Bet365: {bet_link}",
     ]
-
     return "\n".join(parts)
 
 # ========================= MÉTRICAS STATUS ====================
