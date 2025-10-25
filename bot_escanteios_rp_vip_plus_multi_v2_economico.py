@@ -653,10 +653,9 @@ def main_loop():
                 if not fixture_id:
                     continue
 
-                # Economia: ignorar partidas muito cedo, com tolerância (18.8)
+                # Ignorar partidas muito cedo (tolerância 18.8')
                 minute_raw = fixture.get('fixture', {}).get('status', {}).get('elapsed', 0) or 0
                 minute = round(float(minute_raw), 1)
-
                 if minute < 18.8:
                     logger.debug("⏳ Ignorado fixture=%s (min %.1f < 18.8')", fixture_id, minute)
                     continue
@@ -685,8 +684,8 @@ def main_loop():
                     'total_shots': total_shots
                 }
 
-                estrategias = verificar_estrategias_vip(fixture, metrics)
-                composite_ok = composite_trigger_check(fixture, metrics)
+                # ⚙️ Agora a função retorna duas coisas: estratégias e composite_ok
+                estrategias, composite_ok = verificar_estrategias_vip(fixture, metrics)
 
                 if not estrategias and not composite_ok:
                     logger.debug("IGNORADO fixture=%s minuto=%s | press(H)=%.2f/A=%.2f | att=%s | dang=%s | shots=%s",
