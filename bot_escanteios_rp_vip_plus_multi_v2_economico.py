@@ -499,26 +499,25 @@ def build_bet365_link(fixture: Dict[str, Any]) -> str:
     league = (fixture.get("league", {}) or {}).get("name", "") or ""
     query = f"site:bet365.com {home} x {away} {league}"
     return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
-
-def build_vip_message(
+def build_vip_message_v2(
     fixture: Dict[str, Any],
     strategy_title: str,
     metrics: Dict[str, Any],
     best_lines: List[Dict[str, float]],
 ) -> str:
+    """Mensagem aprimorada estilo VIP com nomes dos times e layout limpo."""
     teams = fixture.get("teams", {}) or {}
-    home = (teams.get("home", {}) or {}).get("name", "?") or "?"
-    away = (teams.get("away", {}) or {}).get("name", "?") or "?"
+    league = (fixture.get("league", {}) or {}).get("name", "?")
+    home_team = (teams.get("home", {}) or {}).get("name", "?")
+    away_team = (teams.get("away", {}) or {}).get("name", "?")
 
-    minute_val = metrics.get("minute", 0)
-    try:
-        minute_txt = f"{float(minute_val):.1f}"
-    except Exception:
-        minute_txt = str(minute_val)
-
+    # Placar e minuto
     goals = fixture.get("goals", {}) or {}
     score = f"{goals.get('home', '-')} x {goals.get('away', '-')}"
+    minute_val = metrics.get("minute", 0)
+    minute_txt = f"{float(minute_val):.0f}'" if isinstance(minute_val, (int, float)) else str(minute_val)
 
+    # Estatísticas principais
     total_corners = metrics.get("total_corners", 0)
     home_c = metrics.get("home_corners", 0)
     away_c = metrics.get("away_corners", 0)
@@ -534,31 +533,36 @@ def build_vip_message(
     press_away = f"{metrics.get('press_away', 0.0):.2f}"
     stadium_small = "✅" if metrics.get("small_stadium") else "❌"
 
-    # Top linhas (Poisson) — até 3
+    # Linhas Poisson (até 3 melhores)
     lines_txt = []
     for ln in best_lines[:3]:
         line = f"{ln.get('line', 0):.1f}"
         pwin = f"{ln.get('p_win', 0.0) * 100:.0f}"
         ppush = f"{ln.get('p_push', 0.0) * 100:.0f}"
-        lines_txt.append(f"Linha {line} → Win {pwin}% | Push {ppush}%")
+        lines_txt.append(f"- Linha {line} → Win {pwin}% | Push {ppush}%")
 
+    lines_block = "\n".join(lines_txt) if lines_txt else "Sem projeções disponíveis"
+
+    # Link Bet365
     bet_link = build_bet365_link(fixture)
 
-    parts = [
-        f"📣 {strategy_title}",
-        f"🏟 Jogo: {home} x {away}",
-        f"⏱ Minuto: {minute_txt} | ⚽ Placar: {score}",
-        f"⛳ Cantos: {total_corners} (H:{home_c} - A:{away_c})",
-        f"⚡ Ataques: H:{home_att}  A:{away_att} | 🔥 Perigosos: H:{home_d}  A:{away_d}",
-        f"🥅 Chutes: H:{home_sh}  A:{away_sh} | 🎯 Posse: H:{home_pos}%  A:{away_pos}%",
-        f"📊 Pressão: H:{press_home}  A:{press_away} | 🏟 Estádio pequeno: {stadium_small}",
-        "",
-        "Top linhas sugeridas (Poisson):",
-        *lines_txt,
-        "",
-        f"🔗 Bet365: {bet_link}",
-    ]
-    return "\n".join(parts)
+    # Construção da mensagem
+    msg = (
+        f"📣 {strategy_title} 🚀\n"
+        f"🏟️ {home_team} x {away_team}\n"
+        f"🏆 {league}\n"
+        f"⏱️ {minute_txt} | ⚽ Placar: {score} | ⛳ Cantos: {total_corners} ({home_team}: {home_c} • {away_team}: {away_c})\n"
+        f"🔥 Pressão: {home_team} {press_home} | {away_team} {press_away}\n"
+        f"⚡ Ataques: {home_team} {home_att} | {away_team} {away_att}\n"
+        f"🔥 Perigosos: {home_team} {home_d} | {away_team} {away_d}\n"
+        f"🥅 Finalizações: {home_team} {home_sh} | {away_team} {away_sh}\n"
+        f"🎯 Posse: {home_team} {home_pos}% | {away_team} {away_pos}%\n"
+        f"🏟️ Estádio pequeno: {stadium_small}\n\n"
+        f"📈 Linhas (Poisson)\n{lines_block}\n\n"
+        f"🔗 Acesse Bet365:\n{bet_link}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━"
+    )
+    return msg
 
 # ========================= ANTI-SPAM ==========================
 def should_notify(fixture_id: int, signal_key: str) -> bool:
@@ -676,7 +680,7 @@ def main_loop():
 
                 if (len(estrategias) >= limite_estrategias or composite_ok) and should_notify(fixture_id, signal_key):
                     # Mensagem de sinal: usar texto simples (plain)
-                    msg = build_vip_message(fixture, f"🚀 {strat_title}", metrics, best_lines)
+                    msg = build_vip_message_v2(fixture, f"🚀 {strat_title}", metrics, best_lines)
                     send_telegram_message_plain(msg)
                     signals_sent += 1
                     logger.info("📤 Sinal enviado: %d estratégias ativas [%s] fixture=%s minuto=%s",
