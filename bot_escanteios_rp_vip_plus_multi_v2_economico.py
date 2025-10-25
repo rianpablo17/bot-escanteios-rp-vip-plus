@@ -72,7 +72,7 @@ SMALL_STADIUMS = {
     'bet365 stadium','pride park','liberty stadium','fratton park',
 }
 
-# Anti-spam
+# Anti-spam (memória de reenvio por fixture/chave)
 sent_signals: Dict[int, Dict[str, float]] = defaultdict(dict)
 
 # Diagnóstico
@@ -129,7 +129,12 @@ def telegram_webhook():
             api_status = globals().get("LAST_API_STATUS", "✅ OK")
             uso_api = globals().get("LAST_RATE_USAGE", "Indefinido")
             last_scan_dt: Optional[datetime] = globals().get("LAST_SCAN_TIME")
-            last_scan_txt = last_scan_dt.strftime("%H:%M:%S") if last_scan_dt else "Ainda não realizada"
+            if last_scan_dt:
+                tz = pytz.timezone("America/Sao_Paulo")
+                last_scan_local = last_scan_dt.astimezone(tz) if last_scan_dt.tzinfo else tz.localize(last_scan_dt)
+                last_scan_txt = last_scan_local.strftime("%H:%M:%S")
+            else:
+                last_scan_txt = "Ainda não realizada"
 
             resposta = (
                 "📊 Status Bot Escanteios RP VIP Plus\n"
@@ -143,7 +148,8 @@ def telegram_webhook():
                 "━━━━━━━━━━━━━━━━━━━\n"
                 "🤖 Versão: Multi v2 Econômico ULTRA Sensível v3"
             )
-            _tg_send(chat_id, resposta)
+            # status: sem Markdown pra não quebrar
+            send_telegram_message_plain(resposta)
             logger.info("📨 /status respondido com sucesso (%s)", chat_id)
 
         # --- /debug ---
@@ -154,7 +160,7 @@ def telegram_webhook():
                 f"⏱ Intervalo base: {SCAN_INTERVAL_BASE}s\n"
                 f"📡 Headers API: {last_rate_headers}"
             )
-            _tg_send(chat_id, resposta)
+            send_telegram_message_plain(resposta)
             logger.info("📨 /debug respondido com sucesso (%s)", chat_id)
 
     except Exception as e:
@@ -167,7 +173,7 @@ def telegram_webhook():
 def _tg_send(
     chat_id: str,
     text: str,
-    parse_mode: str = "MarkdownV2",
+    parse_mode: Optional[str] = None,
     disable_web_page_preview: bool = True,
 ) -> None:
     """
@@ -176,48 +182,19 @@ def _tg_send(
     """
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
-    # Escapa caracteres especiais apenas se for MarkdownV2
-    if parse_mode == "MarkdownV2":
-        safe_text = (
-            str(text)
-            .replace("\\", "\\\\")
-            .replace("", "\\")
-            .replace("", "\\")
-            .replace("[", "\\[")
-            .replace("]", "\\]")
-            .replace("(", "\\(")
-            .replace(")", "\\)")
-            .replace("", "\\")
-            .replace("", "\\")
-            .replace(">", "\\>")
-            .replace("#", "\\#")
-            .replace("+", "\\+")
-            .replace("-", "\\-")
-            .replace("=", "\\=")
-            .replace("|", "\\|")
-            .replace("{", "\\{")
-            .replace("}", "\\}")
-            .replace(".", "\\.")
-            .replace("!", "\\!")
-        )
-    else:
-        safe_text = str(text)
-
     payload = {
         "chat_id": chat_id,
-        "text": safe_text,
+        "text": str(text),
         "disable_web_page_preview": disable_web_page_preview,
     }
-
-    if parse_mode:
+    if parse_mode in ("MarkdownV2", "HTML"):
         payload["parse_mode"] = parse_mode
 
     try:
         r = requests.post(url, json=payload, timeout=20)
-        if r.status_code != 200:
-            logger.warning(
-                "⚠️ MarkdownV2 falhou (%s). Reenviando como texto simples...", r.status_code
-            )
+        if r.status_code != 200 and parse_mode:
+            logger.warning("⚠️ parse_mode=%s falhou (%s). Reenviando como texto simples...",
+                           parse_mode, r.status_code)
             fallback_payload = {
                 "chat_id": chat_id,
                 "text": str(text),
@@ -229,12 +206,12 @@ def _tg_send(
 
 
 def send_telegram_message(text: str) -> None:
-    """Envia com MarkdownV2 (para mensagens formatadas, status etc)."""
+    """Para mensagens formatadas (usa MarkdownV2)."""
     _tg_send(TELEGRAM_CHAT_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
 
 def send_telegram_message_plain(text: str) -> None:
-    """Versão sem Markdown — ideal para sinais limpos."""
+    """Versão sem Markdown — ideal para sinais e status limpos."""
     _tg_send(TELEGRAM_CHAT_ID, text, parse_mode=None, disable_web_page_preview=True)
 
 
@@ -242,8 +219,8 @@ def send_admin_message(text: str) -> None:
     """Envio direto ao admin (com Markdown)."""
     if TELEGRAM_ADMIN_ID:
         _tg_send(TELEGRAM_ADMIN_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
-# ===================== API CALLS =====================
 
+# ===================== API CALLS =====================
 def safe_request(
     url: str,
     headers: Dict[str, str],
@@ -253,8 +230,16 @@ def safe_request(
     Executa uma requisição segura à API-Football e retorna o JSON decodificado.
     Retorna None em caso de erro, timeout ou status inesperado.
     """
+    global request_count, last_rate_headers
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
+        request_count += 1
+        last_rate_headers = {
+            'x-ratelimit-requests-remaining': response.headers.get('x-ratelimit-requests-remaining'),
+            'x-ratelimit-requests-limit': response.headers.get('x-ratelimit-requests-limit'),
+            'x-ratelimit-minutely-remaining': response.headers.get('x-ratelimit-minutely-remaining'),
+            'x-ratelimit-minutely-limit': response.headers.get('x-ratelimit-minutely-limit'),
+        }
         if response.status_code == 200:
             return response.json()
         logger.warning("⚠️ Erro API-Football %s: %s", response.status_code, response.text)
@@ -268,9 +253,7 @@ def safe_request(
 
 
 def get_live_fixtures() -> List[Dict[str, Any]]:
-    """
-    Retorna as partidas que estão ao vivo no momento.
-    """
+    """Retorna as partidas que estão ao vivo no momento."""
     try:
         url = f"{API_BASE}/fixtures"
         params = {"live": "all"}
@@ -290,9 +273,7 @@ def get_live_fixtures() -> List[Dict[str, Any]]:
 
 
 def get_fixture_statistics(fixture_id: int) -> Optional[List[Dict[str, Any]]]:
-    """
-    Retorna as estatísticas de uma partida específica.
-    """
+    """Retorna as estatísticas de uma partida específica."""
     try:
         url = f"{API_BASE}/fixtures/statistics"
         params = {"fixture": fixture_id}
@@ -311,6 +292,7 @@ def get_fixture_statistics(fixture_id: int) -> Optional[List[Dict[str, Any]]]:
     except Exception as e:
         logger.exception("Erro em get_fixture_statistics: %s", e)
         return None
+
 # ===================== POISSON =====================
 def poisson_pmf(k: int, lam: float) -> float:
     try:
@@ -349,64 +331,53 @@ def evaluate_candidate_lines(current_total: int, lam: float, lines_to_check=None
 # ===================== EXTRACT STATS =====================
 STAT_ALIASES = {
     'corners': ['corner', 'corners'],
-    'attacks': ['attack'],
-    'danger':  ['danger', 'dangerous', 'dangerous attack', 'shots on goal', 'on goal'],
+    'attacks': ['attack', 'attacks'],
+    'danger':  ['danger', 'dangerous attack', 'dangerous attacks', 'shots on goal'],
     'shots':   ['shot', 'shots', 'total shots', 'shots on target', 'shots on goal'],
     'pos':     ['possession', 'ball possession']
 }
 
-def extract_value(stat_type: str, t: str, val) -> Optional[int]:
-    t_low = t.lower()
-    for alias in STAT_ALIASES[stat_type]:
-        if alias in t_low:
+def extract_value(stat_type: str, stat_label: str, value) -> Optional[int]:
+    """Tenta converter o valor da estatística conforme o tipo."""
+    stat_label = stat_label.lower()
+    for alias in STAT_ALIASES.get(stat_type, []):
+        if alias in stat_label:
             try:
-                return int(float(str(val).replace('%', '')))
+                return int(float(str(value).replace('%', '').strip()))
             except Exception:
                 return 0
     return None
 
 def extract_basic_stats(fixture: Dict[str, Any], stats_resp: List[Dict[str, Any]]):
+    """Extrai estatísticas principais para casa e fora com segurança."""
     teams = fixture.get('teams', {})
     home_id = teams.get('home', {}).get('id')
     away_id = teams.get('away', {}).get('id')
+
     home = {'corners': 0, 'attacks': 0, 'danger': 0, 'shots': 0, 'pos': 50}
     away = {'corners': 0, 'attacks': 0, 'danger': 0, 'shots': 0, 'pos': 50}
 
     for entry in stats_resp or []:
         team = entry.get('team', {}) or {}
         stats_list = entry.get('statistics', []) or []
-        target = home if team.get('id') == home_id else away if team.get('id') == away_id else None
-        if not target:
+        team_id = team.get('id')
+
+        if team_id == home_id:
+            target = home
+        elif team_id == away_id:
+            target = away
+        else:
             continue
+
         for s in stats_list:
-            t = str(s.get('type', '')).lower()
+            label = str(s.get('type', '')).lower()
             val = s.get('value')
 
-            v = extract_value('corners', t, val)
-            if v is not None:
-                target['corners'] = v
-                continue
-
-            v = extract_value('attacks', t, val)
-            if v is not None:
-                target['attacks'] = v
-                continue
-
-            v = extract_value('danger', t, val)
-            if v is not None:
-                target['danger'] = v
-                continue
-
-            v = extract_value('shots', t, val)
-            if v is not None:
-                target['shots'] = v
-                continue
-
-            v = extract_value('pos', t, val)
-                # posse pode vir com %
-            if v is not None:
-                target['pos'] = v
-                continue
+            for key in STAT_ALIASES.keys():
+                v = extract_value(key, label, val)
+                if v is not None:
+                    target[key] = v
+                    break
 
     return home, away
 
@@ -444,37 +415,28 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
     press_away = metrics['press_away']
 
     # ==================== ESTRATÉGIAS ORIGINAIS RP VIP ====================
-
-    # 1️⃣ HT - Casa Empatando (30–42, pressão da casa)
     if HT_WINDOW[0] <= minuto <= HT_WINDOW[1] and home_gols == away_gols and press_home >= MIN_PRESSURE_SCORE:
         estrategias.append("🚩 HT - Casa Empatando")
 
-    # 2️⃣ FT - Reação da Casa (70–88, perdendo + pressão da casa)
-    if 70 <= minuto <= 88 and home_gols < away_gols and press_home >= MIN_PRESSURE_SCORE:
+    if 70 <= minuto <= 86.8 and home_gols < away_gols and press_home >= MIN_PRESSURE_SCORE:
         estrategias.append("🔥 FT - Reação da Casa")
 
-    # 3️⃣ FT - Over Cantos 2º Tempo (70–90, pressão de qualquer lado + cantos ainda baixos)
-    if 70 <= minuto <= 90 and max(press_home, press_away) >= MIN_PRESSURE_SCORE and total_cantos <= 8:
+    if 70 <= minuto <= 88.8 and max(press_home, press_away) >= MIN_PRESSURE_SCORE and total_cantos <= 8:
         estrategias.append("⚡ FT - Over Cantos 2º Tempo")
 
-    # 4️⃣ Campo Pequeno + Pressão (25’–90’)
-    if metrics['small_stadium'] and max(press_home, press_away) >= MIN_PRESSURE_SCORE and 25 <= minuto <= 90:
+    if metrics['small_stadium'] and max(press_home, press_away) >= MIN_PRESSURE_SCORE and 25 <= minuto <= 89.8:
         estrategias.append("🏟️ Campo Pequeno + Pressão")
 
-    # 5️⃣ Jogo Aberto (Ambos pressionam) a partir de 30'
     if minuto >= 30 and press_home >= 0.30 and press_away >= 0.30:
         estrategias.append("🌪️ Jogo Aberto (Ambos pressionam)")
 
-    # 6️⃣ Favorito em Perigo (mais pressiona, mas perde)
-    if 35 <= minuto <= 80:
+    if 35 <= minuto <= 79.8:
         if press_home > press_away + 0.10 and home_gols < away_gols:
             estrategias.append("⚠️ Favorito em Perigo (Casa)")
         if press_away > press_home + 0.10 and away_gols < home_gols:
             estrategias.append("⚠️ Favorito em Perigo (Fora)")
 
     # ==================== NOVAS ESTRATÉGIAS AVANÇADAS ====================
-
-    # 7️⃣ Pressão Mandante Dominante
     if (
         press_home >= 1.36 and
         metrics['home_danger'] >= 5.8 and
@@ -484,7 +446,6 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
     ):
         estrategias.append("🔥 Pressão Mandante Dominante")
 
-    # 8️⃣ Jogo Vivo Sem Cantos
     if (
         total_cantos <= 4.3 and
         (metrics['home_danger'] + metrics['away_danger']) >= 9.4 and
@@ -494,7 +455,6 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
     ):
         estrategias.append("⚡ Jogo Vivo Sem Cantos")
 
-    # 9️⃣ Jogo Travado (Under Corner Asiático)
     if (
         (metrics['home_shots'] + metrics['away_shots']) < 4.8 and
         abs(metrics['home_pos'] - metrics['away_pos']) <= 9.8 and
@@ -503,7 +463,6 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
     ):
         estrategias.append("🧊 Jogo Travado (Under Corner Asiático)")
 
-    # 🔟 Pressão Alternada (Ambos atacando)
     if (
         press_home >= 1.18 and
         press_away >= 1.18 and
@@ -541,7 +500,6 @@ def build_bet365_link(fixture: Dict[str, Any]) -> str:
     query = f"site:bet365.com {home} x {away} {league}"
     return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
 
-
 def build_vip_message(
     fixture: Dict[str, Any],
     strategy_title: str,
@@ -552,7 +510,6 @@ def build_vip_message(
     home = (teams.get("home", {}) or {}).get("name", "?") or "?"
     away = (teams.get("away", {}) or {}).get("name", "?") or "?"
 
-    # Minuto como número com 1 casa, quando possível
     minute_val = metrics.get("minute", 0)
     try:
         minute_txt = f"{float(minute_val):.1f}"
@@ -602,6 +559,19 @@ def build_vip_message(
         f"🔗 Bet365: {bet_link}",
     ]
     return "\n".join(parts)
+
+# ========================= ANTI-SPAM ==========================
+def should_notify(fixture_id: int, signal_key: str) -> bool:
+    """
+    Evita reenvio de sinais repetidos para o mesmo fixture e chave.
+    Respeita a janela RENOTIFY_MINUTES.
+    """
+    now = time.time()
+    last = sent_signals[fixture_id].get(signal_key, 0)
+    if now - last >= RENOTIFY_MINUTES * 60:
+        sent_signals[fixture_id][signal_key] = now
+        return True
+    return False
 
 # ========================= MÉTRICAS STATUS ====================
 def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
@@ -684,7 +654,6 @@ def main_loop():
                     'total_shots': total_shots
                 }
 
-                # ⚙️ Agora a função retorna duas coisas: estratégias e composite_ok
                 estrategias, composite_ok = verificar_estrategias_vip(fixture, metrics)
 
                 if not estrategias and not composite_ok:
@@ -698,39 +667,23 @@ def main_loop():
                 # Mensagem Poisson (lam heurístico)
                 best_lines = evaluate_candidate_lines(total_corners, lam=1.5)
 
-                # --- Envio dinâmico de sinais conforme o tempo do jogo ---
-                # 1º tempo = exige 3 estratégias / 2º tempo = exige 4
+                # Regra: 1ºT exige 3 estratégias | 2ºT exige 4
                 limite_estrategias = 3 if minute <= 45 else 4
 
-                if len(estrategias) >= limite_estrategias or composite_ok:
-                    signal_titles = ", ".join(estrategias[:5])  # mostra até 5 nomes no log
-                    msg = build_vip_message(
-                        fixture,
-                        f"🚀 {len(estrategias)}/{limite_estrategias} Estratégias Ativas",
-                        metrics,
-                        best_lines
-                    )
-                    send_telegram_message(msg)
-                    signals_sent += 1
-                    logger.info(
-                        "📤 Sinal enviado: %d estratégias ativas [%s] fixture=%s minuto=%s",
-                        len(estrategias), signal_titles, fixture_id, minute
-                    )
-                else:
-                    logger.debug(
-                        "❌ Apenas %d estratégias (%s). Aguardando mais sinais fortes...",
-                        len(estrategias), ", ".join(estrategias)
-                    )
+                # Chave antispam
+                strat_title = f"{len(estrategias)}/{limite_estrategias} Estratégias Ativas" if estrategias else "Setup 3/5 — Asiáticos/Limite"
+                signal_key = f"{strat_title}_{total_corners}"
 
-                # --- Envio do setup composto (3/5) ---
-                if composite_ok:
-                    strat_title = "Setup 3/5 — Asiáticos/Limite"
-                    signal_key = f"{strat_title}_{total_corners}"
-                    if should_notify(fixture_id, signal_key):
-                        msg = build_vip_message(fixture, strat_title, metrics, best_lines)
-                        send_telegram_message(msg)
-                        signals_sent += 1
-                        logger.info("📤 Sinal [3/5 Composite] fixture=%s minuto=%s", fixture_id, minute)
+                if (len(estrategias) >= limite_estrategias or composite_ok) and should_notify(fixture_id, signal_key):
+                    # Mensagem de sinal: usar texto simples (plain)
+                    msg = build_vip_message(fixture, f"🚀 {strat_title}", metrics, best_lines)
+                    send_telegram_message_plain(msg)
+                    signals_sent += 1
+                    logger.info("📤 Sinal enviado: %d estratégias ativas [%s] fixture=%s minuto=%s",
+                                len(estrategias), ", ".join(estrategias[:5]), fixture_id, minute)
+                else:
+                    logger.debug("❌ Apenas %d estratégias (%s). Aguardando mais sinais fortes...",
+                                 len(estrategias), ", ".join(estrategias))
 
             # --- Resumo da varredura ---
             try:
@@ -752,7 +705,7 @@ if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3")
     try:
         boot_msg = escape_markdown("🤖 Bot VIP ULTRA ativo. Ignorando jogos < 18.8' e usando pressão dinâmica.")
-        send_telegram_message(boot_msg)
+        send_telegram_message(boot_msg)  # MarkdownV2 com texto escapado
     except Exception:
         pass
 
