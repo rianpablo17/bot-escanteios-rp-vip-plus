@@ -432,9 +432,9 @@ def pressure_score_vip(home: Dict[str, int], away: Dict[str, int]) -> Tuple[floa
          0.10 * norm(away['pos']     - home['pos'],    20))
     return h, a
 
-# ======================= ESTRATÉGIAS VIP =======================
-def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]) -> List[str]:
-    sinais = []
+# ======================= ESTRATÉGIAS VIP FUSIONADAS (v3.0) =======================
+def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
+    estrategias = []
     minuto = metrics['minute']
     total_cantos = metrics['total_corners']
     home_gols = fixture.get('goals', {}).get('home', 0) or 0
@@ -443,39 +443,77 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]) 
     press_home = metrics['press_home']
     press_away = metrics['press_away']
 
-    # 1) HT - Casa Empatando (30–42, pressão da casa)
+    # ==================== ESTRATÉGIAS ORIGINAIS RP VIP ====================
+
+    # 1️⃣ HT - Casa Empatando (30–42, pressão da casa)
     if HT_WINDOW[0] <= minuto <= HT_WINDOW[1] and home_gols == away_gols and press_home >= MIN_PRESSURE_SCORE:
-        sinais.append("Estratégia HT - Casa Empatando")
+        estrategias.append("🚩 HT - Casa Empatando")
 
-    # 2) FT - Reação da Casa (70–88, perdendo + pressão da casa)
+    # 2️⃣ FT - Reação da Casa (70–88, perdendo + pressão da casa)
     if 70 <= minuto <= 88 and home_gols < away_gols and press_home >= MIN_PRESSURE_SCORE:
-        sinais.append("Estratégia FT - Reação da Casa")
+        estrategias.append("🔥 FT - Reação da Casa")
 
-    # 3) FT - Over Cantos 2º Tempo (70–90, pressão de qualquer lado + cantos ainda baixos)
+    # 3️⃣ FT - Over Cantos 2º Tempo (70–90, pressão de qualquer lado + cantos ainda baixos)
     if 70 <= minuto <= 90 and max(press_home, press_away) >= MIN_PRESSURE_SCORE and total_cantos <= 8:
-        sinais.append("Estratégia FT - Over Cantos 2º Tempo")
+        estrategias.append("⚡ FT - Over Cantos 2º Tempo")
 
-    # 4) Campo Pequeno + Pressão (25’–90’)
+    # 4️⃣ Campo Pequeno + Pressão (25’–90’)
     if metrics['small_stadium'] and max(press_home, press_away) >= MIN_PRESSURE_SCORE and 25 <= minuto <= 90:
-        sinais.append("Estratégia Campo Pequeno + Pressão")
+        estrategias.append("🏟️ Campo Pequeno + Pressão")
 
-    # 5) Jogo Aberto (Ambos pressionam) a partir de 30'
+    # 5️⃣ Jogo Aberto (Ambos pressionam) a partir de 30'
     if minuto >= 30 and press_home >= 0.30 and press_away >= 0.30:
-        sinais.append("Estratégia Jogo Aberto (Ambos pressionam)")
+        estrategias.append("🌪️ Jogo Aberto (Ambos pressionam)")
 
-    # 6) Favorito em Perigo (mais pressiona, mas perde)
+    # 6️⃣ Favorito em Perigo (mais pressiona, mas perde)
     if 35 <= minuto <= 80:
         if press_home > press_away + 0.10 and home_gols < away_gols:
-            sinais.append("Favorito em Perigo (Casa)")
+            estrategias.append("⚠️ Favorito em Perigo (Casa)")
         if press_away > press_home + 0.10 and away_gols < home_gols:
-            sinais.append("Favorito em Perigo (Fora)")
+            estrategias.append("⚠️ Favorito em Perigo (Fora)")
 
-    return sinais
+    # ==================== NOVAS ESTRATÉGIAS AVANÇADAS ====================
 
-# ============ COMPOSITE TRIGGER (3/5 condições) ===============
-def composite_trigger_check(fixture: Dict[str, Any], metrics: Dict[str, Any]) -> bool:
-    """True se 3 de 5 condições forem satisfeitas."""
-    minute = metrics['minute']
+    # 7️⃣ Pressão Mandante Dominante
+    if (
+        press_home >= 1.36 and
+        metrics['home_danger'] >= 5.8 and
+        metrics['home_pos'] >= 59.5 and
+        home_gols <= away_gols and
+        18.8 <= minuto <= 38.6
+    ):
+        estrategias.append("🔥 Pressão Mandante Dominante")
+
+    # 8️⃣ Jogo Vivo Sem Cantos
+    if (
+        total_cantos <= 4.3 and
+        (metrics['home_danger'] + metrics['away_danger']) >= 9.4 and
+        (metrics['home_shots'] + metrics['away_shots']) >= 1.8 and
+        press_home < 1.95 and press_away < 1.95 and
+        minuto <= 43.8
+    ):
+        estrategias.append("⚡ Jogo Vivo Sem Cantos")
+
+    # 9️⃣ Jogo Travado (Under Corner Asiático)
+    if (
+        (metrics['home_shots'] + metrics['away_shots']) < 4.8 and
+        abs(metrics['home_pos'] - metrics['away_pos']) <= 9.8 and
+        (metrics['home_danger'] + metrics['away_danger']) < 4.7 and
+        minuto >= 24.5
+    ):
+        estrategias.append("🧊 Jogo Travado (Under Corner Asiático)")
+
+    # 🔟 Pressão Alternada (Ambos atacando)
+    if (
+        press_home >= 1.18 and
+        press_away >= 1.18 and
+        (metrics['home_danger'] + metrics['away_danger']) >= 9.6 and
+        (metrics['home_shots'] + metrics['away_shots']) >= 4.6 and
+        19.5 <= minuto <= 79.5
+    ):
+        estrategias.append("🚀 Pressão Alternada (Ambos Atacando)")
+
+    # ==================== COMPOSITE TRIGGER (3/5 condições) ====================
     home_g = fixture.get('goals', {}).get('home', 0) or 0
     away_g = fixture.get('goals', {}).get('away', 0) or 0
 
@@ -486,12 +524,14 @@ def composite_trigger_check(fixture: Dict[str, Any], metrics: Dict[str, Any]) ->
         (metrics['press_home'] > metrics['press_away'] and home_g < away_g) or
         (metrics['press_away'] > metrics['press_home'] and away_g < home_g)
     )
-    cond_window   = (HT_WINDOW[0] <= minute <= HT_WINDOW[1]) or (FT_WINDOW[0] <= minute <= FT_WINDOW[1])
+    cond_window   = (HT_WINDOW[0] <= minuto <= HT_WINDOW[1]) or (FT_WINDOW[0] <= minuto <= FT_WINDOW[1])
 
     true_count = sum([cond_attacks, cond_danger, cond_pressure, cond_score, cond_window])
     logger.debug("Composite: attacks=%s danger=%s pressure=%s score=%s window=%s -> %d/5",
                  cond_attacks, cond_danger, cond_pressure, cond_score, cond_window, true_count)
-    return true_count >= 3
+    composite_ok = true_count >= 3
+
+    return estrategias, composite_ok
 
 # ===================== VIP MESSAGE / LINKS (PLAIN TEXT LIMPO) =====================
 def build_bet365_link(fixture: Dict[str, Any]) -> str:
@@ -630,16 +670,16 @@ def main_loop():
                 press_home, press_away = pressure_score_vip(home, away)
 
                 total_corners = (home['corners'] or 0) + (away['corners'] or 0)
-                total_shots   = (home['shots'] or 0) + (away['shots'] or 0)
+                total_shots = (home['shots'] or 0) + (away['shots'] or 0)
 
                 metrics = {
                     'minute': minute,
                     'home_corners': home['corners'], 'away_corners': away['corners'],
                     'home_attacks': home['attacks'], 'away_attacks': away['attacks'],
-                    'home_danger': home['danger'],   'away_danger': away['danger'],
-                    'home_shots': home['shots'],     'away_shots': away['shots'],
-                    'home_pos': home['pos'],         'away_pos': away['pos'],
-                    'press_home': press_home,        'press_away': press_away,
+                    'home_danger': home['danger'], 'away_danger': away['danger'],
+                    'home_shots': home['shots'], 'away_shots': away['shots'],
+                    'home_pos': home['pos'], 'away_pos': away['pos'],
+                    'press_home': press_home, 'press_away': press_away,
                     'small_stadium': (fixture.get('fixture', {}).get('venue', {}).get('name', '').lower() in SMALL_STADIUMS),
                     'total_corners': total_corners,
                     'total_shots': total_shots
@@ -651,31 +691,45 @@ def main_loop():
                 if not estrategias and not composite_ok:
                     logger.debug("IGNORADO fixture=%s minuto=%s | press(H)=%.2f/A=%.2f | att=%s | dang=%s | shots=%s",
                                  fixture_id, minute, press_home, press_away,
-                                 metrics['home_attacks']+metrics['away_attacks'],
-                                 metrics['home_danger']+metrics['away_danger'],
+                                 metrics['home_attacks'] + metrics['away_attacks'],
+                                 metrics['home_danger'] + metrics['away_danger'],
                                  total_shots)
                     continue
 
                 # Mensagem Poisson (lam heurístico)
                 best_lines = evaluate_candidate_lines(total_corners, lam=1.5)
 
-                # --- Envio das estratégias padrão ---
-                if estrategias:
-                    for strat_title in estrategias:
-                        signal_key = f"{strat_title}_{total_corners}"
-                        if should_notify(fixture_id, signal_key):
-                            msg = build_vip_message(fixture, strat_title, metrics, best_lines)
-                            _tg_send(TELEGRAM_CHAT_ID, msg)
-                            signals_sent += 1
-                            logger.info("📤 Sinal [%s] fixture=%s minuto=%s", strat_title, fixture_id, minute)
+                # --- Envio dinâmico de sinais conforme o tempo do jogo ---
+                # 1º tempo = exige 3 estratégias / 2º tempo = exige 4
+                limite_estrategias = 3 if minute <= 45 else 4
+
+                if len(estrategias) >= limite_estrategias or composite_ok:
+                    signal_titles = ", ".join(estrategias[:5])  # mostra até 5 nomes no log
+                    msg = build_vip_message(
+                        fixture,
+                        f"🚀 {len(estrategias)}/{limite_estrategias} Estratégias Ativas",
+                        metrics,
+                        best_lines
+                    )
+                    send_telegram_message(msg)
+                    signals_sent += 1
+                    logger.info(
+                        "📤 Sinal enviado: %d estratégias ativas [%s] fixture=%s minuto=%s",
+                        len(estrategias), signal_titles, fixture_id, minute
+                    )
+                else:
+                    logger.debug(
+                        "❌ Apenas %d estratégias (%s). Aguardando mais sinais fortes...",
+                        len(estrategias), ", ".join(estrategias)
+                    )
 
                 # --- Envio do setup composto (3/5) ---
-                elif composite_ok:
+                if composite_ok:
                     strat_title = "Setup 3/5 — Asiáticos/Limite"
                     signal_key = f"{strat_title}_{total_corners}"
                     if should_notify(fixture_id, signal_key):
                         msg = build_vip_message(fixture, strat_title, metrics, best_lines)
-                        _tg_send(TELEGRAM_CHAT_ID, msg)
+                        send_telegram_message(msg)
                         signals_sent += 1
                         logger.info("📤 Sinal [3/5 Composite] fixture=%s minuto=%s", fixture_id, minute)
 
