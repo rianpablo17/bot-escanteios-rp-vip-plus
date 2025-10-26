@@ -1,11 +1,4 @@
-[13:52, 26/10/2025] Rian 🧠: => Implantando...
-==> Correndo ´python bot_escanteios_rp_vip_plus_multi_v2_economico.py'
-2025-10-26 16H50M20S319 INFO:bot_escanteios_rp_vip_multi_v2_economico: 🚀 Iniciando Bot Escanteios RP VIP Mais — Multi v2 (Econômico) ULTRA Sensível v3
-2025-10-26 16H50M20S407 DEBUG: urllib3.conexãopool: Começando novo novo HTTPS conexão (1): api.telegram.org:443
-2025-10-26 16H50:21H207 DEBUG: urllib3.conexãopool: https://api.telegram.org:443 "POSTAR /bot7977015488:AAGFxg1f8RcJk-1b1pZEIBz7fnvs1IjKR50/sendMensagem HTTP/1.1" 200 353
-2025-10-26 16H50:21H209 INFO:bot_escanteios_rp_vip_multi_v2_economico: 🔁 Laço economico iniciado. Base: Anos 120 (renotificar=3 min).
-2025-10-26 16H50:21H209 INFO:bot_escanteios_rp_vip_multi_v2_economico: 🟢 Laço economico ativo: aguardando jo…
-[14:32, 26/10/2025] Rian 🧠: #!/usr/bin/env python3
+#!/usr/bin/env python3
 # -- coding: utf-8 --
 """
 Bot Escanteios RP VIP Plus — Multi v2 (Econômico) • ULTRA Sensível v3 (Premium)
