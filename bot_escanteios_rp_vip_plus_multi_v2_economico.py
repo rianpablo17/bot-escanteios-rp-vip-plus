@@ -4,7 +4,7 @@
 Bot Escanteios RP VIP Plus — Multi v2 (Econômico) • ULTRA Sensível v3
 - Dispara quando qualquer 3 de 5 condições principais forem verdadeiras
 - Thresholds ajustados para teste (mais sensível)
-- Mantém estratégias (HT, FT, Campo Pequeno, Jogo Aberto, Favorito em Perigo)
+- Mantém estratégias (HT, FT, Campo Pequeno, Jogo Aberto, Favorito em Perigo + avançadas)
 - Anti-spam, /status e /debug via webhook do Telegram
 ENV:
 - API_FOOTBALL_KEY, TOKEN, TELEGRAM_CHAT_ID, (opcional) TELEGRAM_ADMIN_ID
@@ -293,53 +293,19 @@ def get_fixture_statistics(fixture_id: int) -> Optional[List[Dict[str, Any]]]:
         logger.exception("Erro em get_fixture_statistics: %s", e)
         return None
 
-# ===================== POISSON =====================
-def poisson_pmf(k: int, lam: float) -> float:
-    try:
-        return (lam**k) * math.exp(-lam) / math.factorial(k) if k >= 0 else 0.0
-    except Exception:
-        return 0.0
-
-def poisson_cdf_le(k: int, lam: float) -> float:
-    return sum(poisson_pmf(i, lam) for i in range(0, int(k) + 1))
-
-def poisson_tail_ge(k: int, lam: float) -> float:
-    return 1.0 if k <= 0 else 1.0 - poisson_cdf_le(k - 1, lam)
-
-def predict_corners_and_line_metrics(current_total: int, lam_remaining: float, candidate_line) -> Dict[str, float]:
-    is_fractional = isinstance(candidate_line, float) and (candidate_line % 1) != 0
-    if is_fractional:
-        required = int(math.floor(candidate_line) + 1)
-        p_win = poisson_tail_ge(required - current_total, lam_remaining)
-        p_push = 0.0
-        p_lose = 1.0 - p_win
-    else:
-        L = int(candidate_line)
-        required = L + 1
-        p_win = poisson_tail_ge(required - current_total, lam_remaining)
-        k_eq = L - current_total
-        p_push = poisson_pmf(k_eq, lam_remaining) if k_eq >= 0 else 0.0
-        p_lose = 1.0 - p_win - p_push
-    return {'line': float(candidate_line), 'p_win': p_win, 'p_push': p_push, 'p_lose': p_lose}
-
-def evaluate_candidate_lines(current_total: int, lam: float, lines_to_check=None) -> List[Dict[str, float]]:
-    lines_to_check = lines_to_check or [3.5, 4.0, 4.5, 5.0, 5.5]
-    results = [predict_corners_and_line_metrics(current_total, lam, L) for L in lines_to_check]
-    results.sort(key=lambda x: x['p_win'], reverse=True)
-    return results
-
 # ===================== EXTRACT STATS =====================
+# IMPORTANTES: separa "dangerous attacks" de "shots on goal" corretamente
 STAT_ALIASES = {
     'corners': ['corner', 'corners'],
     'attacks': ['attack', 'attacks'],
-    'danger':  ['danger', 'dangerous attack', 'dangerous attacks', 'shots on goal'],
+    'danger':  ['dangerous attack', 'dangerous attacks'],  # NÃO confundir com shots!
     'shots':   ['shot', 'shots', 'total shots', 'shots on target', 'shots on goal'],
     'pos':     ['possession', 'ball possession']
 }
 
 def extract_value(stat_type: str, stat_label: str, value) -> Optional[int]:
     """Tenta converter o valor da estatística conforme o tipo."""
-    stat_label = stat_label.lower()
+    stat_label = (stat_label or '').lower()
     for alias in STAT_ALIASES.get(stat_type, []):
         if alias in stat_label:
             try:
@@ -416,25 +382,25 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
 
     # ==================== ESTRATÉGIAS ORIGINAIS RP VIP ====================
     if HT_WINDOW[0] <= minuto <= HT_WINDOW[1] and home_gols == away_gols and press_home >= MIN_PRESSURE_SCORE:
-        estrategias.append("🚩 HT - Casa Empatando")
+        estrategias.append("HT - Casa Empatando")
 
     if 70 <= minuto <= 86.8 and home_gols < away_gols and press_home >= MIN_PRESSURE_SCORE:
-        estrategias.append("🔥 FT - Reação da Casa")
+        estrategias.append("FT - Reação da Casa")
 
     if 70 <= minuto <= 88.8 and max(press_home, press_away) >= MIN_PRESSURE_SCORE and total_cantos <= 8:
-        estrategias.append("⚡ FT - Over Cantos 2º Tempo")
+        estrategias.append("FT - Over Cantos 2º Tempo")
 
     if metrics['small_stadium'] and max(press_home, press_away) >= MIN_PRESSURE_SCORE and 25 <= minuto <= 89.8:
-        estrategias.append("🏟️ Campo Pequeno + Pressão")
+        estrategias.append("Campo Pequeno + Pressão")
 
     if minuto >= 30 and press_home >= 0.30 and press_away >= 0.30:
-        estrategias.append("🌪️ Jogo Aberto (Ambos pressionam)")
+        estrategias.append("Jogo Aberto (Ambos pressionam)")
 
     if 35 <= minuto <= 79.8:
         if press_home > press_away + 0.10 and home_gols < away_gols:
-            estrategias.append("⚠️ Favorito em Perigo (Casa)")
+            estrategias.append("Favorito em Perigo (Casa)")
         if press_away > press_home + 0.10 and away_gols < home_gols:
-            estrategias.append("⚠️ Favorito em Perigo (Fora)")
+            estrategias.append("Favorito em Perigo (Fora)")
 
     # ==================== NOVAS ESTRATÉGIAS AVANÇADAS ====================
     if (
@@ -444,7 +410,7 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
         home_gols <= away_gols and
         18.8 <= minuto <= 38.6
     ):
-        estrategias.append("🔥 Pressão Mandante Dominante")
+        estrategias.append("Pressão Mandante Dominante")
 
     if (
         total_cantos <= 4.3 and
@@ -453,7 +419,7 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
         press_home < 1.95 and press_away < 1.95 and
         minuto <= 43.8
     ):
-        estrategias.append("⚡ Jogo Vivo Sem Cantos")
+        estrategias.append("Jogo Vivo Sem Cantos")
 
     if (
         (metrics['home_shots'] + metrics['away_shots']) < 4.8 and
@@ -461,7 +427,7 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
         (metrics['home_danger'] + metrics['away_danger']) < 4.7 and
         minuto >= 24.5
     ):
-        estrategias.append("🧊 Jogo Travado (Under Corner Asiático)")
+        estrategias.append("Jogo Travado (Under Corner Asiático)")
 
     if (
         press_home >= 1.18 and
@@ -470,7 +436,7 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
         (metrics['home_shots'] + metrics['away_shots']) >= 4.6 and
         19.5 <= minuto <= 79.5
     ):
-        estrategias.append("🚀 Pressão Alternada (Ambos Atacando)")
+        estrategias.append("Pressão Alternada (Ambos Atacando)")
 
     # ==================== COMPOSITE TRIGGER (3/5 condições) ====================
     home_g = fixture.get('goals', {}).get('home', 0) or 0
@@ -478,19 +444,36 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
 
     cond_attacks  = (metrics['home_attacks'] + metrics['away_attacks']) >= ATTACKS_MIN_SUM
     cond_danger   = (metrics['home_danger']  + metrics['away_danger'])  >= DANGER_MIN_SUM
-    cond_pressure = max(metrics['press_home'], metrics['press_away'])    >= MIN_PRESSURE_SCORE
-    cond_score    = (home_g == away_g) or (
+    cond_pressure = max(metrics['press_home'], metrics['press_away'])   >= MIN_PRESSURE_SCORE
+    cond_score    = (
+        (home_g == away_g) or
         (metrics['press_home'] > metrics['press_away'] and home_g < away_g) or
         (metrics['press_away'] > metrics['press_home'] and away_g < home_g)
     )
     cond_window   = (HT_WINDOW[0] <= minuto <= HT_WINDOW[1]) or (FT_WINDOW[0] <= minuto <= FT_WINDOW[1])
 
     true_count = sum([cond_attacks, cond_danger, cond_pressure, cond_score, cond_window])
-    logger.debug("Composite: attacks=%s danger=%s pressure=%s score=%s window=%s -> %d/5",
-                 cond_attacks, cond_danger, cond_pressure, cond_score, cond_window, true_count)
     composite_ok = true_count >= 3
 
+    logger.debug(
+        "🧩 Composite (Setup 3/5): Ataques=%s | Perigo=%s | Pressão=%s | Placar=%s | Janela=%s → %d/5 | Estratégias VIP: %d/10",
+        cond_attacks, cond_danger, cond_pressure, cond_score, cond_window, true_count, len(estrategias)
+    )
+
     return estrategias, composite_ok
+
+# ========================= ANTI-SPAM ==========================
+def should_notify(fixture_id: int, signal_key: str) -> bool:
+    """
+    Evita reenvio de sinais repetidos para o mesmo fixture e chave.
+    Respeita a janela RENOTIFY_MINUTES.
+    """
+    now = time.time()
+    last = sent_signals[fixture_id].get(signal_key, 0)
+    if now - last >= RENOTIFY_MINUTES * 60:
+        sent_signals[fixture_id][signal_key] = now
+        return True
+    return False
 
 # ===================== VIP MESSAGE / LINKS (PLAIN TEXT LIMPO) =====================
 def build_bet365_link(fixture: Dict[str, Any]) -> str:
@@ -499,25 +482,29 @@ def build_bet365_link(fixture: Dict[str, Any]) -> str:
     league = (fixture.get("league", {}) or {}).get("name", "") or ""
     query = f"site:bet365.com {home} x {away} {league}"
     return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
-def build_vip_message_v2(
+
+def _format_minute(elapsed: Any) -> str:
+    try:
+        return f"{float(elapsed):.0f}'"
+    except Exception:
+        return str(elapsed)
+
+def build_signal_message_vip(
     fixture: Dict[str, Any],
-    strategy_title: str,
+    estrategias: List[str],
     metrics: Dict[str, Any],
-    best_lines: List[Dict[str, float]],
 ) -> str:
-    """Mensagem aprimorada estilo VIP com nomes dos times e layout limpo."""
+    """Mensagem VIP (sem Poisson), nomes dos times e título único HT/FT."""
     teams = fixture.get("teams", {}) or {}
     league = (fixture.get("league", {}) or {}).get("name", "?")
     home_team = (teams.get("home", {}) or {}).get("name", "?")
     away_team = (teams.get("away", {}) or {}).get("name", "?")
 
-    # Placar e minuto
     goals = fixture.get("goals", {}) or {}
     score = f"{goals.get('home', '-')} x {goals.get('away', '-')}"
-    minute_val = metrics.get("minute", 0)
-    minute_txt = f"{float(minute_val):.0f}'" if isinstance(minute_val, (int, float)) else str(minute_val)
 
-    # Estatísticas principais
+    minute_txt = _format_minute(metrics.get("minute", 0))
+
     total_corners = metrics.get("total_corners", 0)
     home_c = metrics.get("home_corners", 0)
     away_c = metrics.get("away_corners", 0)
@@ -533,49 +520,36 @@ def build_vip_message_v2(
     press_away = f"{metrics.get('press_away', 0.0):.2f}"
     stadium_small = "✅" if metrics.get("small_stadium") else "❌"
 
-    # Linhas Poisson (até 3 melhores)
-    lines_txt = []
-    for ln in best_lines[:3]:
-        line = f"{ln.get('line', 0):.1f}"
-        pwin = f"{ln.get('p_win', 0.0) * 100:.0f}"
-        ppush = f"{ln.get('p_push', 0.0) * 100:.0f}"
-        lines_txt.append(f"- Linha {line} → Win {pwin}% | Push {ppush}%")
+    # Título: HT ou FT conforme janela
+    minute_val = metrics.get("minute", 0)
+    if HT_WINDOW[0] <= minute_val <= HT_WINDOW[1]:
+        title = "ALERTA ESTRATÉGIA: HT — Asiáticos/Limite"
+    elif FT_WINDOW[0] <= minute_val <= FT_WINDOW[1]:
+        title = "ALERTA ESTRATÉGIA: FT — Asiáticos/Limite"
+    else:
+        title = "ALERTA ESTRATÉGIA — Asiáticos/Limite"
 
-    lines_block = "\n".join(lines_txt) if lines_txt else "Sem projeções disponíveis"
+    estrategias_block = " • ".join(estrategias) if estrategias else "Setup 3/5 válido"
 
-    # Link Bet365
     bet_link = build_bet365_link(fixture)
 
-    # Construção da mensagem
     msg = (
-        f"📣 {strategy_title} 🚀\n"
+        f"📣 {title}\n"
         f"🏟️ {home_team} x {away_team}\n"
         f"🏆 {league}\n"
-        f"⏱️ {minute_txt} | ⚽ Placar: {score} | ⛳ Cantos: {total_corners} ({home_team}: {home_c} • {away_team}: {away_c})\n"
+        f"⏱️ {minute_txt} | ⚽ Placar: {score}\n"
+        f"⛳ Cantos: {total_corners} ({home_team}: {home_c} • {away_team}: {away_c})\n"
         f"🔥 Pressão: {home_team} {press_home} | {away_team} {press_away}\n"
         f"⚡ Ataques: {home_team} {home_att} | {away_team} {away_att}\n"
         f"🔥 Perigosos: {home_team} {home_d} | {away_team} {away_d}\n"
         f"🥅 Finalizações: {home_team} {home_sh} | {away_team} {away_sh}\n"
         f"🎯 Posse: {home_team} {home_pos}% | {away_team} {away_pos}%\n"
         f"🏟️ Estádio pequeno: {stadium_small}\n\n"
-        f"📈 Linhas (Poisson)\n{lines_block}\n\n"
-        f"🔗 Acesse Bet365:\n{bet_link}\n"
+        f"📌 Estratégias ativas: {estrategias_block}\n\n"
+        f"🔗 Bet365:\n{bet_link}\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━"
     )
     return msg
-
-# ========================= ANTI-SPAM ==========================
-def should_notify(fixture_id: int, signal_key: str) -> bool:
-    """
-    Evita reenvio de sinais repetidos para o mesmo fixture e chave.
-    Respeita a janela RENOTIFY_MINUTES.
-    """
-    now = time.time()
-    last = sent_signals[fixture_id].get(signal_key, 0)
-    if now - last >= RENOTIFY_MINUTES * 60:
-        sent_signals[fixture_id][signal_key] = now
-        return True
-    return False
 
 # ========================= MÉTRICAS STATUS ====================
 def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
@@ -627,9 +601,14 @@ def main_loop():
                 if not fixture_id:
                     continue
 
-                # Ignorar partidas muito cedo (tolerância 18.8')
+                # Minuto do jogo (elapsed) com 1 casa
                 minute_raw = fixture.get('fixture', {}).get('status', {}).get('elapsed', 0) or 0
-                minute = round(float(minute_raw), 1)
+                try:
+                    minute = round(float(minute_raw), 1)
+                except Exception:
+                    minute = 0.0
+
+                # Ignorar partidas muito cedo (tolerância 18.8')
                 if minute < 18.8:
                     logger.debug("⏳ Ignorado fixture=%s (min %.1f < 18.8')", fixture_id, minute)
                     continue
@@ -661,15 +640,12 @@ def main_loop():
                 estrategias, composite_ok = verificar_estrategias_vip(fixture, metrics)
 
                 if not estrategias and not composite_ok:
-                    logger.debug("IGNORADO fixture=%s minuto=%s | press(H)=%.2f/A=%.2f | att=%s | dang=%s | shots=%s",
+                    logger.debug("IGNORADO fixture=%s minuto=%.1f | press(H)=%.2f/A=%.2f | att=%s | dang=%s | shots=%s",
                                  fixture_id, minute, press_home, press_away,
                                  metrics['home_attacks'] + metrics['away_attacks'],
                                  metrics['home_danger'] + metrics['away_danger'],
                                  total_shots)
                     continue
-
-                # Mensagem Poisson (lam heurístico)
-                best_lines = evaluate_candidate_lines(total_corners, lam=1.5)
 
                 # Regra: 1ºT exige 3 estratégias | 2ºT exige 4
                 limite_estrategias = 3 if minute <= 45 else 4
@@ -679,11 +655,10 @@ def main_loop():
                 signal_key = f"{strat_title}_{total_corners}"
 
                 if (len(estrategias) >= limite_estrategias or composite_ok) and should_notify(fixture_id, signal_key):
-                    # Mensagem de sinal: usar texto simples (plain)
-                    msg = build_vip_message_v2(fixture, f"🚀 {strat_title}", metrics, best_lines)
+                    msg = build_signal_message_vip(fixture, estrategias, metrics)
                     send_telegram_message_plain(msg)
                     signals_sent += 1
-                    logger.info("📤 Sinal enviado: %d estratégias ativas [%s] fixture=%s minuto=%s",
+                    logger.info("📤 Sinal enviado: %d estratégias ativas [%s] fixture=%s minuto=%.1f",
                                 len(estrategias), ", ".join(estrategias[:5]), fixture_id, minute)
                 else:
                     logger.debug("❌ Apenas %d estratégias (%s). Aguardando mais sinais fortes...",
@@ -708,8 +683,8 @@ def main_loop():
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3")
     try:
-        boot_msg = escape_markdown("🤖 Bot VIP ULTRA ativo. Ignorando jogos < 18.8' e usando pressão dinâmica.")
-        send_telegram_message(boot_msg)  # MarkdownV2 com texto escapado
+        boot_msg = "🤖 Bot VIP ULTRA ativo. Ignorando jogos < 18.8' e usando pressão dinâmica."
+        send_telegram_message_plain(boot_msg)  # plain para não quebrar
     except Exception:
         pass
 
