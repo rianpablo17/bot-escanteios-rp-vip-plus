@@ -10,7 +10,7 @@ Bot Escanteios RP VIP Plus — Multi v2 (Econômico) • ULTRA Sensível v3 (Pre
 
 ENV:
 - API_FOOTBALL_KEY, TOKEN, TELEGRAM_CHAT_ID, (opcional) TELEGRAM_ADMIN_ID
-- SCAN_INTERVAL (default 300), RENOTIFY_MINUTES (default 3)
+- SCAN_INTERVAL (default 120), RENOTIFY_MINUTES (default 3)
 """
 
 import os
@@ -37,7 +37,7 @@ API_FOOTBALL_KEY   = os.getenv('API_FOOTBALL_KEY')
 TOKEN              = os.getenv('TOKEN')
 TELEGRAM_CHAT_ID   = os.getenv('TELEGRAM_CHAT_ID')
 TELEGRAM_ADMIN_ID  = os.getenv('TELEGRAM_ADMIN_ID')
-SCAN_INTERVAL_BASE = int(os.getenv('SCAN_INTERVAL', '300'))  # ← 300s por padrão
+SCAN_INTERVAL_BASE = int(os.getenv('SCAN_INTERVAL', '120'))  # ← 120s por padrão
 RENOTIFY_MINUTES   = int(os.getenv('RENOTIFY_MINUTES', '3'))
 
 if not API_FOOTBALL_KEY:
