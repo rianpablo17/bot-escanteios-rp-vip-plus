@@ -15,7 +15,7 @@ services:
       - key: TELEGRAM_ADMIN_ID
         sync: false
       - key: SCAN_INTERVAL
-        value: 300
+        value: 120
       - key: RENOTIFY_MINUTES
         value: 3
       - key: LOG_LEVEL
