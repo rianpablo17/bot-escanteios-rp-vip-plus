@@ -419,7 +419,7 @@ def build_signal_message_vip(fixture: Dict[str, Any], estrategias: List[str], me
     away_team = (teams.get("away", {}) or {}).get("name", "?")
     goals = fixture.get("goals", {}) or {}
     score = f"{goals.get('home', '-')} x {goals.get('away', '-')}"
-    minute_txt = _format_minute(metrics.get("minute", 0))
+    minute_txt = f"{metrics.get('minute', 0):.0f}'"
 
     total_corners = metrics.get("total_corners", 0)
     home_c = metrics.get("home_corners", 0)
@@ -439,31 +439,34 @@ def build_signal_message_vip(fixture: Dict[str, Any], estrategias: List[str], me
     # Título: HT/FT
     minute_val = metrics.get("minute", 0)
     if HT_WINDOW[0] <= minute_val <= HT_WINDOW[1]:
-        title = "ALERTA ESTRATÉGIA: HT — Asiáticos/Limite"
+        title = "📣 Alerta Estratégia: Asiáticos/Limite - HT 📣"
     elif FT_WINDOW[0] <= minute_val <= FT_WINDOW[1]:
-        title = "ALERTA ESTRATÉGIA: FT — Asiáticos/Limite"
+        title = "📣 Alerta Estratégia: Asiáticos/Limite - FT 📣"
     else:
-        title = "ALERTA ESTRATÉGIA — Asiáticos/Limite"
+        title = "📣 Alerta Estratégia: Asiáticos/Limite 📣"
 
-    estrategias_block = " • ".join(estrategias) if estrategias else "Setup 2/5 válido"  # coerente com composite 2/5
+    estrategias_block = " • ".join(estrategias) if estrategias else "Setup 2/5 válido"
     bet_link = build_bet365_link(fixture)
 
     msg = (
-        f"📣 {title}\n"
-        f"🏟️ {home_team} x {away_team}\n"
-        f"🏆 {league}\n"
-        f"⏱️ {minute_txt} | ⚽ Placar: {score}\n"
-        f"⛳ Cantos: {total_corners} ({home_team}: {home_c} • {away_team}: {away_c})\n"
-        f"🔥 Pressão: {home_team} {press_home} | {away_team} {press_away}\n"
-        f"⚡ Ataques: {home_team} {home_att} | {away_team} {away_att}\n"
-        f"🔥 Perigosos: {home_team} {home_d} | {away_team} {away_d}\n"
-        f"🥅 Finalizações: {home_team} {home_sh} | {away_team} {away_sh}\n"
-        f"🎯 Posse: {home_team} {home_pos}% | {away_team} {away_pos}%\n"
-        f"🏟️ Estádio pequeno: {stadium_small}\n\n"
-        f"📌 Estratégias ativas: {estrategias_block}\n\n"
-        f"🔗 Bet365:\n{bet_link}\n"
+        f"{title}\n"
+        f"🏟️ *Jogo:* {home_team} x {away_team}\n"
+        f"🏆 *Competição:* {league}\n"
+        f"🕒 *Tempo:* {minute_txt}\n"
+        f"⚽ *Placar:* {score}\n"
+        f"⛳ *Cantos:* {total_corners}  ({home_team}: {home_c} • {away_team}: {away_c})\n\n"
+        f"📊 *Indicadores:*\n"
+        f"• Pressão → {home_team}: {press_home} | {away_team}: {press_away}\n"
+        f"• Ataques → {home_team}: {home_att} | {away_team}: {away_att}\n"
+        f"• Perigosos → {home_team}: {home_d} | {away_team}: {away_d}\n"
+        f"• Finalizações → {home_team}: {home_sh} | {away_team}: {away_sh}\n"
+        f"• Posse de bola → {home_team}: {home_pos}% | {away_team}: {away_pos}%\n"
+        f"• Estádio pequeno: {stadium_small}\n\n"
+        f"📌 *Estratégias Ativas:* {estrategias_block}\n\n"
+        f"🔗 [Abrir no Bet365]({bet_link})\n"
         f"━━━━━━━━━━━━━━━━━━━━━━━"
     )
+
     return msg
 
 # ========================= UTIL: MINUTO/PERÍODO =========================
