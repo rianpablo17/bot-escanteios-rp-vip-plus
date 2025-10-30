@@ -412,62 +412,91 @@ def _format_minute(elapsed: Any) -> str:
     except Exception:
         return str(elapsed)
 
-def build_signal_message_vip(fixture: Dict[str, Any], estrategias: List[str], metrics: Dict[str, Any]) -> str:
-    teams = fixture.get("teams", {}) or {}
-    league = (fixture.get("league", {}) or {}).get("name", "?")
-    home_team = (teams.get("home", {}) or {}).get("name", "?")
-    away_team = (teams.get("away", {}) or {}).get("name", "?")
-    goals = fixture.get("goals", {}) or {}
-    score = f"{goals.get('home', '-')} x {goals.get('away', '-')}"
-    minute_txt = f"{metrics.get('minute', 0):.0f}'"
+def build_signal_message_vip_v3(fixture: dict, estrategias: list, metrics: dict) -> str:
+    """
+    Monta a mensagem do sinal no estilo VIP Pro — completa, detalhada e formatada em Markdown.
+    """
 
-    total_corners = metrics.get("total_corners", 0)
-    home_c = metrics.get("home_corners", 0)
-    away_c = metrics.get("away_corners", 0)
-    home_att = metrics.get("home_attacks", 0)
-    away_att = metrics.get("away_attacks", 0)
-    home_d = metrics.get("home_danger", 0)
-    away_d = metrics.get("away_danger", 0)
-    home_sh = metrics.get("home_shots", 0)
-    away_sh = metrics.get("away_shots", 0)
-    home_pos = metrics.get("home_pos", 0)
-    away_pos = metrics.get("away_pos", 0)
-    press_home = f"{metrics.get('press_home', 0.0):.2f}"
-    press_away = f"{metrics.get('press_away', 0.0):.2f}"
-    stadium_small = "✅" if metrics.get("small_stadium") else "❌"
+    try:
+        # ---------- Dados básicos ----------
+        teams = fixture.get("teams", {}) or {}
+        league_data = fixture.get("league", {}) or {}
+        league = league_data.get("name", "?")
+        home_team = (teams.get("home", {}) or {}).get("name", "?")
+        away_team = (teams.get("away", {}) or {}).get("name", "?")
+        goals = fixture.get("goals", {}) or {}
+        score = f"{goals.get('home', '-')} x {goals.get('away', '-')}"
+        minute = metrics.get("minute", 0)
+        minute_txt = f"{minute:.0f}'"
+        period = "HT" if minute <= 45 else "FT"
 
-    # Título: HT/FT
-    minute_val = metrics.get("minute", 0)
-    if HT_WINDOW[0] <= minute_val <= HT_WINDOW[1]:
-        title = "📣 Alerta Estratégia: Asiáticos/Limite - HT 📣"
-    elif FT_WINDOW[0] <= minute_val <= FT_WINDOW[1]:
-        title = "📣 Alerta Estratégia: Asiáticos/Limite - FT 📣"
-    else:
-        title = "📣 Alerta Estratégia: Asiáticos/Limite 📣"
+        # ---------- Estatísticas ----------
+        home_c = metrics.get("home_corners", 0)
+        away_c = metrics.get("away_corners", 0)
+        press_home = f"{metrics.get('press_home', 0.0):.2f}"
+        press_away = f"{metrics.get('press_away', 0.0):.2f}"
+        home_att = metrics.get("home_attacks", 0)
+        away_att = metrics.get("away_attacks", 0)
+        home_d = metrics.get("home_danger", 0)
+        away_d = metrics.get("away_danger", 0)
+        home_sh = metrics.get("home_shots", 0)
+        away_sh = metrics.get("away_shots", 0)
+        home_pos = metrics.get("home_pos", 0)
+        away_pos = metrics.get("away_pos", 0)
+        stadium_small = "✅" if metrics.get("small_stadium") else "❌"
 
-    estrategias_block = " • ".join(estrategias) if estrategias else "Setup 2/5 válido"
-    bet_link = build_bet365_link(fixture)
+        # ---------- Odds e links ----------
+        odds_home = metrics.get("odd_home", "-")
+        odds_draw = metrics.get("odd_draw", "-")
+        odds_away = metrics.get("odd_away", "-")
+        bet_link = build_bet365_link(fixture)
+        link_cornerprobet = metrics.get("cornerprobet_url", "https://cornerprobet.com/")
 
-    msg = (
-        f"{title}\n"
-        f"🏟️ *Jogo:* {home_team} x {away_team}\n"
-        f"🏆 *Competição:* {league}\n"
-        f"🕒 *Tempo:* {minute_txt}\n"
-        f"⚽ *Placar:* {score}\n"
-        f"⛳ *Cantos:* {total_corners}  ({home_team}: {home_c} • {away_team}: {away_c})\n\n"
-        f"📊 *Indicadores:*\n"
-        f"• Pressão → {home_team}: {press_home} | {away_team}: {press_away}\n"
-        f"• Ataques → {home_team}: {home_att} | {away_team}: {away_att}\n"
-        f"• Perigosos → {home_team}: {home_d} | {away_team}: {away_d}\n"
-        f"• Finalizações → {home_team}: {home_sh} | {away_team}: {away_sh}\n"
-        f"• Posse de bola → {home_team}: {home_pos}% | {away_team}: {away_pos}%\n"
-        f"• Estádio pequeno: {stadium_small}\n\n"
-        f"📌 *Estratégias Ativas:* {estrategias_block}\n\n"
-        f"🔗 [Abrir no Bet365]({bet_link})\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━"
-    )
+        estrategias_block = " • ".join(estrategias) if estrategias else "Setup 2/5 válido"
 
-    return msg
+        # ---------- Lógica de domínio ----------
+        if float(press_home) > float(press_away):
+            dominio = "mandante"
+            favorito = home_team
+        elif float(press_home) < float(press_away):
+            dominio = "visitante"
+            favorito = away_team
+        else:
+            dominio = "equilibrado"
+            favorito = "nenhum"
+
+        recomendacao = (
+            f"⚠️ Possível canto ou gol para o {favorito} antes do final do período"
+            if dominio != "equilibrado"
+            else "⚠️ Jogo equilibrado — monitorar ataques de ambos os lados"
+        )
+
+        # ---------- Montagem final ----------
+        msg = (
+            f"📣 Alerta Estratégia: Asiáticos - {period} 📣\n"
+            f"🏟️ Jogo: {home_team} x {away_team}\n"
+            f"🏆 Liga: {league}\n"
+            f"🕒 Tempo: {minute_txt}\n"
+            f"⚽ Placar: {score}\n"
+            f"⛳ Cantos: {home_c} - {away_c} (1T)\n"
+            f"📈 Odds Pré-Live: {odds_home} / {odds_draw} / {odds_away}\n\n"
+            f"📊 Indicadores do Jogo:\n"
+            f"• Pressão → {home_team}: {press_home} | {away_team}: {press_away}\n"
+            f"• Ataques → {home_att} x {away_att}\n"
+            f"• Perigosos → {home_d} x {away_d}\n"
+            f"• Finalizações → {home_sh} x {away_sh}\n"
+            f"• Posse de Bola → {home_pos}% x {away_pos}%\n"
+            f"• Estádio Pequeno: {stadium_small}\n\n"
+            f"📌 Estratégias Ativas: {estrategias_block}\n"
+            f"📌 Análise: Jogo com domínio {dominio} — {recomendacao}\n\n"
+            f"🔗 [CornerProBet]({link_cornerprobet}) | [Bet365]({bet_link})\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━"
+        )
+
+        return msg.strip()
+
+    except Exception as e:
+        return f"⚠️ Erro ao montar mensagem: {e}"
 
 # ========================= UTIL: MINUTO/PERÍODO =========================
 def get_period(minute: float) -> str:
@@ -507,8 +536,12 @@ def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
     else:
         LAST_API_STATUS = "⚠️ Cabeçalhos ausentes"
         LAST_RATE_USAGE = "Indefinido"
-
 # ========================= MAIN LOOP ==========================
+from collections import defaultdict
+
+# 🔐 Controle global anti-duplicado
+sent_period = defaultdict(set)
+
 def main_loop():
     logger.info("🔁 Loop econômico iniciado. Base: %ss (renotify=%s min).", SCAN_INTERVAL_BASE, RENOTIFY_MINUTES)
     logger.info("🟢 Loop econômico ativo: aguardando jogos ao vivo...")
@@ -536,21 +569,36 @@ def main_loop():
                 if not fixture_id:
                     continue
 
-                # Minuto do jogo (suavizado)
-                minute_raw = fixture.get('fixture', {}).get('status', {}).get('elapsed', 0) or 0
-                minute = smooth_minute(fixture_id, float(minute_raw))
+                # ----- Minuto e status do jogo -----
+                fixture_status = fixture.get('fixture', {}).get('status', {}) or {}
+                status_short = fixture_status.get('short', '')
+                minute_real = fixture_status.get('elapsed', 0) or 0
+
+                # ⚠️ Ignora jogos que não estão ao vivo
+                if status_short not in ["1H", "2H"]:
+                    logger.debug("⏩ Ignorando fixture=%s — status: %s", fixture_id, status_short)
+                    continue
+
+                # ⚠️ Ignora minutos inválidos
+                if not minute_real or minute_real < 1:
+                    logger.debug("⏩ Ignorando fixture=%s — minuto inválido (%s)", fixture_id, minute_real)
+                    continue
+
+                # Suaviza minuto e identifica período
+                minute = smooth_minute(fixture_id, float(minute_real))
                 period = get_period(minute)
 
-                # Ignorar partidas muito cedo (tolerância 18.8')
+                # Ignorar partidas muito cedo
                 if minute < 18.8:
                     logger.debug("⏳ Ignorado fixture=%s (min %.1f < 18.8')", fixture_id, minute)
                     continue
 
-                # Já enviei sinal neste período? (um por período)
+                # Anti-duplicado: já enviou sinal neste período?
                 if period in sent_period[fixture_id]:
                     logger.debug("🔒 Já sinalizado neste período %s (fixture=%s). Pulando.", period, fixture_id)
                     continue
 
+                # ----- Estatísticas -----
                 stats_resp = get_fixture_statistics(fixture_id)
                 if not stats_resp:
                     logger.debug("Sem estatísticas para fixture=%s no momento.", fixture_id)
@@ -575,6 +623,7 @@ def main_loop():
                     'total_shots': total_shots
                 }
 
+                # ----- Estratégias -----
                 estrategias, composite_ok = verificar_estrategias_vip(fixture, metrics)
                 if not estrategias and not composite_ok:
                     logger.debug("IGNORADO fixture=%s minuto=%.1f | press(H)=%.2f/A=%.2f | att=%s | dang=%s | shots=%s",
@@ -584,29 +633,51 @@ def main_loop():
                                  total_shots)
                     continue
 
-                # Regra: 1ºT exige 3 estratégias | 2ºT exige 4
-                # ajuste v3.1 -> limite estrategias 2/3 (antes 3/4)
+                # Regras de limite
                 limite_estrategias = 2 if minute <= 45 else 3
                 strat_title = f"{len(estrategias)}/{limite_estrategias} Estratégias Ativas" if estrategias else "Setup 2/5 — Asiáticos/Limite"
                 signal_key = f"{period}{strat_title}{total_corners}"
 
+                # ----- Envio do sinal -----
                 if (len(estrategias) >= limite_estrategias or composite_ok) and should_notify(fixture_id, signal_key):
-                    msg = build_signal_message_vip(fixture, estrategias, metrics)
-                    send_telegram_message_plain(msg)
-                    signals_sent += 1
-                    sent_period[fixture_id].add(period)  # marca que já enviou neste período
-                    logger.info("📤 Sinal enviado (%s): %d estratégias [%s] fixture=%s minuto=%.1f",
-                                period, len(estrategias), ", ".join(estrategias[:5]), fixture_id, minute)
+                    teams = fixture.get("teams", {}) or {}
+                    home_team = (teams.get("home", {}) or {}).get("name", "?")
+                    away_team = (teams.get("away", {}) or {}).get("name", "?")
+
+                    logger.info(f"🕒 {home_team} x {away_team} — Ao Vivo ({status_short}) | {minute_real}’")
+
+                    try:
+                        msg = build_signal_message_vip_v3(fixture, estrategias, metrics)
+                        send_telegram_message_plain(msg, parse_mode="Markdown")
+
+                        signals_sent += 1
+                        sent_period[fixture_id].add(period)
+                        logger.info("📤 Sinal enviado (%s): %d estratégias [%s] fixture=%s minuto=%.1f",
+                                    period, len(estrategias), ", ".join(estrategias[:5]), fixture_id, minute_real)
+
+                    except Exception as e:
+                        logger.error(f"❌ Erro ao enviar sinal para {home_team} x {away_team}: {e}")
+
                 else:
                     logger.debug("❌ Apenas %d estratégias (%s). Aguardando mais sinais fortes...",
                                  len(estrategias), ", ".join(estrategias))
 
-            # --- Resumo da varredura ---
+            # ----- Limpeza e resumo -----
             try:
+                # 🧹 Remove jogos encerrados do registro anti-duplicado
+                for fid in list(sent_period.keys()):
+                    fstatus = next((fx for fx in fixtures if fx.get("fixture", {}).get("id") == fid), None)
+                    if fstatus:
+                        short = fstatus.get("fixture", {}).get("status", {}).get("short", "")
+                        if short in ["FT", "PST", "CANC"]:
+                            del sent_period[fid]
+                            logger.debug(f"🧹 Removido fixture encerrado ({fid}) do registro anti-duplicado")
+
                 logger.info("📊 Resumo: %d jogos analisados | %d sinais enviados | próxima em %ds",
                             total, signals_sent, scan_interval)
                 atualizar_metricas(total, last_rate_headers)
                 signals_sent = 0
+
             except Exception as e:
                 logger.exception("Erro ao finalizar resumo da varredura: %s", e)
 
@@ -614,7 +685,7 @@ def main_loop():
 
         except Exception as e:
             logger.exception("Erro no loop principal: %s", e)
-            time.sleep(SCAN_INTERVAL_BASE)
+            time.sleep(SCAN_INTERVAL_BASE
 
 # =========================== START ============================
 if __name__ == "__main__":
