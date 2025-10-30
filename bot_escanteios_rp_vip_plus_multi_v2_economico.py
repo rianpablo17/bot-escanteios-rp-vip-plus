@@ -215,7 +215,7 @@ def send_telegram_message_plain(text: str, parse_mode: Optional[str] = None) -> 
 
 def send_admin_message(text: str) -> None:
     if TELEGRAM_ADMIN_ID:
-        _tg_send(TELEGRAM_ADMIN_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
+        _tg_send(TELEGRAM_ADMIN_ID, text, parse_mode="HTML", disable_web_page_preview=True)
 
 # ===================== API CALLS =====================
 def safe_request(url: str, headers: Dict[str, str], params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
