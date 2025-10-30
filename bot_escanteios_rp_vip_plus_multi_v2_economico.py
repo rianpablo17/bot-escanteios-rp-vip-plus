@@ -685,7 +685,7 @@ def main_loop():
 
         except Exception as e:
             logger.exception("Erro no loop principal: %s", e)
-            time.sleep(SCAN_INTERVAL_BASE
+            time.sleep(SCAN_INTERVAL_BASE)
 
 # =========================== START ============================
 if __name__ == "__main__":
