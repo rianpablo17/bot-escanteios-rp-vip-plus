@@ -84,7 +84,7 @@ no_stats_backoff_until: Dict[int, float] = {}         # evitar pedir stats por X
 request_count = 0
 last_rate_headers: Dict[str, str] = {}
 
-# ====================== ESCAPE MARKDOWNV2 =====================
+# ====================== ESCAPE HTML =====================
 MDV2_SPECIALS = r'[_*\[\]()~`>#+\-=|{}.!]'
 
 def escape_markdown(text: Any) -> str:
@@ -148,7 +148,7 @@ def telegram_webhook():
                 "━━━━━━━━━━━━━━━━━━━\n"
                 "🤖 Versão: Multi v2 Econômico ULTRA Sensível v3"
             )
-            send_telegram_message_plain(resposta, parse_mode="Markdown")
+            send_telegram_message_plain(resposta, parse_mode="HTML")
 
         # 🧩 /debug -> diagnóstico técnico
         elif text == '/debug':
@@ -158,7 +158,7 @@ def telegram_webhook():
                 f"⏱ Intervalo base: {SCAN_INTERVAL_BASE}s\n"
                 f"📡 Headers API: {last_rate_headers}"
             )
-            send_telegram_message_plain(resposta, parse_mode="Markdown")
+            send_telegram_message_plain(resposta, parse_mode="HTML")
 
         # 📈 /relatorio -> gera painel de performance VIP
         elif text == '/relatorio':
@@ -171,7 +171,7 @@ def telegram_webhook():
                 "🤖 Bot Escanteios RP VIP+ ativo!\n\n"
                 "📊 Use /relatorio para ver o desempenho do dia.\n"
                 "⚙️ Use /status para ver o estado do bot.",
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
 
     except Exception as e:
@@ -446,7 +446,7 @@ def _format_minute(elapsed: Any) -> str:
 
 def build_signal_message_vip_v3(fixture: dict, estrategias: list, metrics: dict) -> str:
     """
-    Monta a mensagem do sinal no estilo VIP Pro — completa, detalhada e formatada em Markdown.
+    Monta a mensagem do sinal no estilo VIP Pro — completa, detalhada e formatada em 	HTML.
     """
 
     try:
@@ -664,7 +664,7 @@ def main_loop():
                 if (len(estrategias) >= limite_estrategias or composite_ok) and should_notify(fixture_id, signal_key):
                     try:
                         msg = build_signal_message_vip(fixture, estrategias, metrics)
-                        send_telegram_message_plain(msg, parse_mode="Markdown")
+                        send_telegram_message_plain(msg, parse_mode="HTML")
                         signals_sent += 1
                         sent_period[fixture_id].add(period)
                         logger.info(f"📤 Sinal enviado ({period}): {len(estrategias)} estratégias fixture={fixture_id} min={minute:.1f}")
@@ -762,7 +762,7 @@ def gerar_relatorio_diario():
         f"🚀 Continue operando no modo VIP — rumo aos 80%+ de acerto!"
     )
 
-    send_telegram_message_plain(msg, parse_mode="Markdown")
+    send_telegram_message_plain(msg, parse_mode="HTML")
 # =========================== START ============================
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3")
