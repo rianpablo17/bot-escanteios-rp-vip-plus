@@ -556,6 +556,7 @@ from collections import defaultdict
 # 🔐 Controle global anti-duplicado
 sent_period = defaultdict(set)
 
+# ========================= MAIN LOOP ==========================
 def main_loop():
     logger.info("🔁 Loop econômico iniciado. Base: %ss (renotify=%s min).", SCAN_INTERVAL_BASE, RENOTIFY_MINUTES)
     logger.info("🟢 Loop econômico ativo: aguardando jogos ao vivo...")
@@ -583,39 +584,33 @@ def main_loop():
                 if not fixture_id:
                     continue
 
-                # ----- Minuto e status do jogo -----
-                fixture_status = fixture.get('fixture', {}).get('status', {}) or {}
-                status_short = fixture_status.get('short', '')
-                minute_real = fixture_status.get('elapsed', 0) or 0
+                # 🔍 Verifica status do jogo
+                fixture_info = fixture.get("fixture", {}) or {}
+                fixture_status = fixture_info.get("status", {}) or {}
+                status_short = fixture_status.get("short", "")
+                minute_real = fixture_status.get("elapsed", 0) or 0
 
-                # ⚠️ Ignora jogos que não estão ao vivo
+                # Ignorar jogos que não estão ao vivo (apenas 1H e 2H válidos)
                 if status_short not in ["1H", "2H"]:
-                    logger.debug("⏩ Ignorando fixture=%s — status: %s", fixture_id, status_short)
+                    logger.debug(f"⏩ Ignorando fixture={fixture_id} — status inválido: {status_short}")
                     continue
 
-                # ⚠️ Ignora minutos inválidos
-                if not minute_real or minute_real < 1:
-                    logger.debug("⏩ Ignorando fixture=%s — minuto inválido (%s)", fixture_id, minute_real)
+                # Ignorar partidas muito cedo (tolerância 18.8')
+                if minute_real < 18.8:
+                    logger.debug(f"⏳ Ignorado fixture={fixture_id} (min {minute_real:.1f} < 18.8')")
                     continue
 
-                # Suaviza minuto e identifica período
                 minute = smooth_minute(fixture_id, float(minute_real))
                 period = get_period(minute)
 
-                # Ignorar partidas muito cedo
-                if minute < 18.8:
-                    logger.debug("⏳ Ignorado fixture=%s (min %.1f < 18.8')", fixture_id, minute)
-                    continue
-
-                # Anti-duplicado: já enviou sinal neste período?
+                # Já enviei sinal neste período? (um por período)
                 if period in sent_period[fixture_id]:
-                    logger.debug("🔒 Já sinalizado neste período %s (fixture=%s). Pulando.", period, fixture_id)
+                    logger.debug(f"🔒 Já sinalizado neste período {period} (fixture={fixture_id}). Pulando.")
                     continue
 
-                # ----- Estatísticas -----
                 stats_resp = get_fixture_statistics(fixture_id)
                 if not stats_resp:
-                    logger.debug("Sem estatísticas para fixture=%s no momento.", fixture_id)
+                    logger.debug(f"Sem estatísticas para fixture={fixture_id} no momento.")
                     continue
 
                 home, away = extract_basic_stats(fixture, stats_resp)
@@ -637,70 +632,120 @@ def main_loop():
                     'total_shots': total_shots
                 }
 
-                # ----- Estratégias -----
                 estrategias, composite_ok = verificar_estrategias_vip(fixture, metrics)
                 if not estrategias and not composite_ok:
-                    logger.debug("IGNORADO fixture=%s minuto=%.1f | press(H)=%.2f/A=%.2f | att=%s | dang=%s | shots=%s",
-                                 fixture_id, minute, press_home, press_away,
-                                 metrics['home_attacks'] + metrics['away_attacks'],
-                                 metrics['home_danger'] + metrics['away_danger'],
-                                 total_shots)
+                    logger.debug(f"IGNORADO fixture={fixture_id} minuto={minute:.1f} | press(H)={press_home:.2f}/A={press_away:.2f}")
                     continue
 
-                # Regras de limite
+                # Regras dinâmicas
                 limite_estrategias = 2 if minute <= 45 else 3
-                strat_title = f"{len(estrategias)}/{limite_estrategias} Estratégias Ativas" if estrategias else "Setup 2/5 — Asiáticos/Limite"
-                signal_key = f"{period}{strat_title}{total_corners}"
+                signal_key = f"{period}{len(estrategias)}{total_corners}"
 
-                # ----- Envio do sinal -----
+                # ==============================================================
+                # 💬 Envio do Sinal
+                # ==============================================================
                 if (len(estrategias) >= limite_estrategias or composite_ok) and should_notify(fixture_id, signal_key):
-                    teams = fixture.get("teams", {}) or {}
-                    home_team = (teams.get("home", {}) or {}).get("name", "?")
-                    away_team = (teams.get("away", {}) or {}).get("name", "?")
-
-                    logger.info(f"🕒 {home_team} x {away_team} — Ao Vivo ({status_short}) | {minute_real}’")
-
                     try:
-                        msg = build_signal_message_vip_v3(fixture, estrategias, metrics)
+                        msg = build_signal_message_vip(fixture, estrategias, metrics)
                         send_telegram_message_plain(msg, parse_mode="Markdown")
-
                         signals_sent += 1
                         sent_period[fixture_id].add(period)
-                        logger.info("📤 Sinal enviado (%s): %d estratégias [%s] fixture=%s minuto=%.1f",
-                                    period, len(estrategias), ", ".join(estrategias[:5]), fixture_id, minute_real)
-
+                        logger.info(f"📤 Sinal enviado ({period}): {len(estrategias)} estratégias fixture={fixture_id} min={minute:.1f}")
                     except Exception as e:
-                        logger.error(f"❌ Erro ao enviar sinal para {home_team} x {away_team}: {e}")
-
+                        logger.error(f"❌ Erro ao enviar sinal: {e}")
                 else:
-                    logger.debug("❌ Apenas %d estratégias (%s). Aguardando mais sinais fortes...",
-                                 len(estrategias), ", ".join(estrategias))
+                    logger.debug(f"❌ Estratégias insuficientes ({len(estrategias)}). Aguardando próximo tick...")
 
-            # ----- Limpeza e resumo -----
+            # --- Resumo da varredura ---
             try:
-                # 🧹 Remove jogos encerrados do registro anti-duplicado
-                for fid in list(sent_period.keys()):
-                    fstatus = next((fx for fx in fixtures if fx.get("fixture", {}).get("id") == fid), None)
-                    if fstatus:
-                        short = fstatus.get("fixture", {}).get("status", {}).get("short", "")
-                        if short in ["FT", "PST", "CANC"]:
-                            del sent_period[fid]
-                            logger.debug(f"🧹 Removido fixture encerrado ({fid}) do registro anti-duplicado")
-
-                logger.info("📊 Resumo: %d jogos analisados | %d sinais enviados | próxima em %ds",
-                            total, signals_sent, scan_interval)
+                logger.info(f"📊 Resumo: {total} jogos analisados | {signals_sent} sinais enviados | próxima em {scan_interval}s")
                 atualizar_metricas(total, last_rate_headers)
                 signals_sent = 0
-
             except Exception as e:
-                logger.exception("Erro ao finalizar resumo da varredura: %s", e)
+                logger.exception(f"Erro ao finalizar resumo da varredura: {e}")
 
             time.sleep(scan_interval)
 
         except Exception as e:
-            logger.exception("Erro no loop principal: %s", e)
+            logger.exception(f"Erro no loop principal: {e}")
             time.sleep(SCAN_INTERVAL_BASE)
+# ========================== RELATÓRIO DE PERFORMANCE ==========================
+import csv
+from datetime import datetime, date
+from collections import Counter
 
+RELATORIO_PATH = "relatorio.csv"
+
+# 🔹 Registra cada sinal enviado
+def registrar_sinal(fixture: dict, estrategias: list, resultado: str = "⏳") -> None:
+    """Salva cada sinal no arquivo relatorio.csv"""
+    teams = fixture.get("teams", {}) or {}
+    home_team = (teams.get("home", {}) or {}).get("name", "?")
+    away_team = (teams.get("away", {}) or {}).get("name", "?")
+
+    with open(RELATORIO_PATH, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            date.today().isoformat(),
+            datetime.now().strftime("%H:%M"),
+            f"{home_team} x {away_team}",
+            ",".join(estrategias) if estrategias else "Nenhuma",
+            resultado
+        ])
+
+# 🔹 Atualiza o resultado manualmente (Green/Red)
+def atualizar_resultado(jogo: str, resultado: str):
+    """Atualiza um resultado específico no relatório"""
+    linhas = []
+    with open(RELATORIO_PATH, "r", encoding="utf-8") as f:
+        linhas = [linha.strip().split(",") for linha in f.readlines()]
+    for linha in linhas:
+        if jogo.lower() in linha[2].lower():
+            linha[-1] = resultado
+    with open(RELATORIO_PATH, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(linhas)
+
+# 🔹 Gera o relatório e envia no Telegram
+def gerar_relatorio_diario():
+    """Lê o relatorio.csv, calcula estatísticas e envia resumo via Telegram"""
+    try:
+        with open(RELATORIO_PATH, "r", encoding="utf-8") as f:
+            rows = [r.strip().split(",") for r in f.readlines()]
+    except FileNotFoundError:
+        send_telegram_message("📊 Nenhum dado disponível ainda no relatório.")
+        return
+
+    hoje = date.today().isoformat()
+    registros = [r for r in rows if r and r[0] == hoje]
+    if not registros:
+        send_telegram_message("📊 Nenhum sinal registrado hoje ainda.")
+        return
+
+    total = len(registros)
+    greens = sum(1 for r in registros if "✅" in r[-1])
+    reds = sum(1 for r in registros if "❌" in r[-1])
+    pendentes = total - greens - reds
+    eficiencia = (greens / total * 100) if total else 0
+
+    estrategias = [e for r in registros for e in r[3].split(",") if e.strip() not in ["Nenhuma", ""]]
+    mais_frequentes = Counter(estrategias).most_common(1)
+    melhor_estrategia = mais_frequentes[0][0] if mais_frequentes else "—"
+
+    msg = (
+        f"📊 Relatório de Performance — Bot Escanteios RP VIP+\n"
+        f"🗓️ Período: {datetime.now().strftime('%d/%m/%Y')}\n"
+        f"📈 Total de Sinais: {total}\n"
+        f"✅ Greens: {greens} ({(greens/total*100):.0f}%)\n"
+        f"❌ Reds: {reds} ({(reds/total*100):.0f}%)\n"
+        f"⏳ Pendentes: {pendentes}\n"
+        f"⚙️ Eficiência Média: {eficiencia:.1f}%\n"
+        f"💡 Melhor Estratégia: {melhor_estrategia}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚀 Continue operando no modo VIP — rumo aos 80%+ de acerto!"
+    )
+
+    send_telegram_message_plain(msg, parse_mode="Markdown")
 # =========================== START ============================
 if __name__ == "__main__":
     logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3")
