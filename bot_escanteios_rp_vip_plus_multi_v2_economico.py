@@ -164,22 +164,36 @@ def telegram_webhook():
 # ====================== TELEGRAM HELPERS ======================
 def _tg_send(chat_id: str, text: str, parse_mode: Optional[str] = None, disable_web_page_preview: bool = True) -> None:
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": chat_id, "text": str(text), "disable_web_page_preview": disable_web_page_preview}
-    if parse_mode in ("MarkdownV2", "HTML"):
+    payload = {
+        "chat_id": chat_id,
+        "text": str(text),
+        "disable_web_page_preview": disable_web_page_preview,
+    }
+    if parse_mode:
         payload["parse_mode"] = parse_mode
+
     try:
         r = requests.post(url, json=payload, timeout=20)
-        if r.status_code != 200 and parse_mode:
-            fallback_payload = {"chat_id": chat_id, "text": str(text), "disable_web_page_preview": True}
+        if r.status_code != 200:
+            logger.warning(f"Telegram resposta {r.status_code}: {r.text}")
+            # fallback sem parse_mode
+            fallback_payload = {
+                "chat_id": chat_id,
+                "text": str(text),
+                "disable_web_page_preview": True,
+            }
             requests.post(url, json=fallback_payload, timeout=20)
     except Exception as e:
         logger.exception("Erro ao enviar mensagem para o Telegram: %s", e)
 
-def send_telegram_message(text: str) -> None:
-    _tg_send(TELEGRAM_CHAT_ID, text, parse_mode="MarkdownV2", disable_web_page_preview=True)
 
-def send_telegram_message_plain(text: str) -> None:
-    _tg_send(TELEGRAM_CHAT_ID, text, parse_mode=None, disable_web_page_preview=True)
+def send_telegram_message(text: str, parse_mode: str = "MarkdownV2") -> None:
+    _tg_send(TELEGRAM_CHAT_ID, text, parse_mode=parse_mode, disable_web_page_preview=True)
+
+
+def send_telegram_message_plain(text: str, parse_mode: Optional[str] = None) -> None:
+    _tg_send(TELEGRAM_CHAT_ID, text, parse_mode=parse_mode, disable_web_page_preview=True)
+
 
 def send_admin_message(text: str) -> None:
     if TELEGRAM_ADMIN_ID:
