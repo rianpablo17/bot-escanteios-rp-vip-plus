@@ -116,6 +116,9 @@ def telegram_webhook():
         text = (message.get('text') or '').strip().lower()
         chat_id = str(message.get('chat', {}).get('id', TELEGRAM_CHAT_ID))
 
+        # ====================== COMANDOS TELEGRAM ======================
+
+        # 📊 /status -> informações do bot
         if text == '/status':
             uptime = int(time.time() - START_TIME)
             horas = uptime // 3600
@@ -145,8 +148,9 @@ def telegram_webhook():
                 "━━━━━━━━━━━━━━━━━━━\n"
                 "🤖 Versão: Multi v2 Econômico ULTRA Sensível v3"
             )
-            send_telegram_message_plain(resposta)
+            send_telegram_message_plain(resposta, parse_mode="Markdown")
 
+        # 🧩 /debug -> diagnóstico técnico
         elif text == '/debug':
             resposta = (
                 "🧩 Modo Debug\n"
@@ -154,7 +158,21 @@ def telegram_webhook():
                 f"⏱ Intervalo base: {SCAN_INTERVAL_BASE}s\n"
                 f"📡 Headers API: {last_rate_headers}"
             )
-            send_telegram_message_plain(resposta)
+            send_telegram_message_plain(resposta, parse_mode="Markdown")
+
+        # 📈 /relatorio -> gera painel de performance VIP
+        elif text == '/relatorio':
+            gerar_relatorio_diario()
+            logger.info("📊 Relatório diário solicitado via Telegram.")
+
+        # 🟢 /start -> mensagem de boas-vindas
+        elif text == '/start':
+            send_telegram_message_plain(
+                "🤖 Bot Escanteios RP VIP+ ativo!\n\n"
+                "📊 Use /relatorio para ver o desempenho do dia.\n"
+                "⚙️ Use /status para ver o estado do bot.",
+                parse_mode="Markdown"
+            )
 
     except Exception as e:
         logger.exception("❌ Erro no processamento do webhook: %s", e)
@@ -556,7 +574,6 @@ from collections import defaultdict
 # 🔐 Controle global anti-duplicado
 sent_period = defaultdict(set)
 
-# ========================= MAIN LOOP ==========================
 def main_loop():
     logger.info("🔁 Loop econômico iniciado. Base: %ss (renotify=%s min).", SCAN_INTERVAL_BASE, RENOTIFY_MINUTES)
     logger.info("🟢 Loop econômico ativo: aguardando jogos ao vivo...")
