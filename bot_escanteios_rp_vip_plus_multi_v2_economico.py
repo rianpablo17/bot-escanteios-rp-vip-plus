@@ -568,11 +568,12 @@ def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
     else:
         LAST_API_STATUS = "⚠️ Cabeçalhos ausentes"
         LAST_RATE_USAGE = "Indefinido"
-#==================FUNÇÃO DE MENSAGEM VIP (PROFISSIONAL - HT/FT)=====================
+# ========================= FUNÇÃO DE MENSAGEM VIP (PROFISSIONAL - HT/FT) ==========================
 def build_signal_message_vip(match, estrategias, stats):
     """
     Monta a mensagem formatada (HTML) no padrão profissional VIP.
     Detecta automaticamente o período (HT/FT) e aplica layout elegante.
+    Corrigido o parse do Telegram (sem erro de '.').
     """
     try:
         # ====== Dados principais do jogo ======
@@ -591,9 +592,9 @@ def build_signal_message_vip(match, estrategias, stats):
         odds_draw = stats.get('odds_draw', '-')
         odds_away = stats.get('odds_away', '-')
 
-        # Links
-        link_cornerprobet = stats.get('link_cornerprobet', '')
-        link_bet365 = stats.get('link_bet365', '')
+        # Links (corrigidos para texto clicável)
+        link_cornerprobet = stats.get('link_cornerprobet', 'https://cornerprobet.com/analysis/')
+        link_bet365 = stats.get('link_bet365', f"https://bet365.bet.br/#/AX/K^{away}/")
 
         # ====== Identifica período ======
         periodo = "HT" if tempo <= 45 else "FT"
@@ -610,8 +611,8 @@ def build_signal_message_vip(match, estrategias, stats):
 - 1ºP: {cantos_home} - {cantos_away}
 ⌚ <b>Possíveis acréscimos:</b> {injury_time}'
 
-<a href="{link_cornerprobet}">https://cornerprobet.com/analysis/</a>
-<a href="{link_bet365}">https://bet365.bet.br/#/AX/K^{away}/</a>
+🔗 <a href="{link_cornerprobet}">CornerProBet</a>
+🎯 <a href="{link_bet365}">Bet365</a>
 
 ➡️ <b>Detalhes:</b> 👉 Fazer entrada em ESCANTEIOS (mercado asiático)
 🚀 <b>Sinal VIP ativo!</b>
