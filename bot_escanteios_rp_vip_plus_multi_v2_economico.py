@@ -568,6 +568,53 @@ def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
     else:
         LAST_API_STATUS = "⚠️ Cabeçalhos ausentes"
         LAST_RATE_USAGE = "Indefinido"
+# ========================= FUNÇÃO DE MENSAGEM VIP ==========================
+def build_signal_message_vip(match, estrategias, stats):
+    """
+    Monta a mensagem formatada em HTML para envio ao grupo VIP do Telegram
+    """
+    try:
+        home = match['teams']['home']['name']
+        away = match['teams']['away']['name']
+        league = match['league']['name']
+        tempo = match['fixture']['status']['elapsed']
+        placar_home = match['goals']['home']
+        placar_away = match['goals']['away']
+        cantos_home = stats.get('home_corners', 0)
+        cantos_away = stats.get('away_corners', 0)
+        total_cantos = stats.get('total_corners', 0)
+        injury_time = stats.get('injury_time', '?')
+
+        odds_home = stats.get('odds_home', '-')
+        odds_draw = stats.get('odds_draw', '-')
+        odds_away = stats.get('odds_away', '-')
+
+        link_cornerprobet = stats.get('link_cornerprobet', '')
+        link_bet365 = stats.get('link_bet365', '')
+
+        mensagem = f"""
+📣 <b>Alerta Estratégia: Asiáticos/Limite - VIP 📣</b>
+🏟 <b>Jogo:</b> {home} x {away}
+🏆 <b>Competição:</b> {league}
+🕛 <b>Tempo:</b> {tempo}'
+⚽ <b>Resultado:</b> {placar_home} x {placar_away}
+⛳ <b>Cantos:</b> {cantos_home} - {cantos_away}
+- 1ºP: {cantos_home} - {cantos_away}
+⌚ <b>Possíveis acréscimos:</b> {injury_time}'
+📈 <b>Odds 1x2 Pre-live:</b> {odds_home} / {odds_draw} / {odds_away}
+
+<a href="{link_cornerprobet}">🔗 CornerProBet</a>
+<a href="{link_bet365}">🎯 Bet365</a>
+
+➡️ <b>Detalhes:</b> 👉 Fazer entrada em ESCANTEIOS (mercado asiático)
+🚀 <b>Sinal VIP ativo!</b>
+"""
+        return mensagem.strip()
+
+    except Exception as e:
+        return f"<b>Erro ao montar mensagem VIP:</b> {e}"
+
+
 # ========================= MAIN LOOP ==========================
 from collections import defaultdict
 
@@ -601,18 +648,15 @@ def main_loop():
                 if not fixture_id:
                     continue
 
-                # 🔍 Verifica status do jogo
                 fixture_info = fixture.get("fixture", {}) or {}
                 fixture_status = fixture_info.get("status", {}) or {}
                 status_short = fixture_status.get("short", "")
                 minute_real = fixture_status.get("elapsed", 0) or 0
 
-                # Ignorar jogos que não estão ao vivo (apenas 1H e 2H válidos)
                 if status_short not in ["1H", "2H"]:
                     logger.debug(f"⏩ Ignorando fixture={fixture_id} — status inválido: {status_short}")
                     continue
 
-                # Ignorar partidas muito cedo (tolerância 18.8')
                 if minute_real < 18.8:
                     logger.debug(f"⏳ Ignorado fixture={fixture_id} (min {minute_real:.1f} < 18.8')")
                     continue
@@ -620,7 +664,6 @@ def main_loop():
                 minute = smooth_minute(fixture_id, float(minute_real))
                 period = get_period(minute)
 
-                # Já enviei sinal neste período? (um por período)
                 if period in sent_period[fixture_id]:
                     logger.debug(f"🔒 Já sinalizado neste período {period} (fixture={fixture_id}). Pulando.")
                     continue
@@ -654,7 +697,6 @@ def main_loop():
                     logger.debug(f"IGNORADO fixture={fixture_id} minuto={minute:.1f} | press(H)={press_home:.2f}/A={press_away:.2f}")
                     continue
 
-                # Regras dinâmicas
                 limite_estrategias = 2 if minute <= 45 else 3
                 signal_key = f"{period}{len(estrategias)}{total_corners}"
 
@@ -673,7 +715,6 @@ def main_loop():
                 else:
                     logger.debug(f"❌ Estratégias insuficientes ({len(estrategias)}). Aguardando próximo tick...")
 
-            # --- Resumo da varredura ---
             try:
                 logger.info(f"📊 Resumo: {total} jogos analisados | {signals_sent} sinais enviados | próxima em {scan_interval}s")
                 atualizar_metricas(total, last_rate_headers)
