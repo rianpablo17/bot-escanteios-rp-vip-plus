@@ -568,43 +568,50 @@ def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
     else:
         LAST_API_STATUS = "⚠️ Cabeçalhos ausentes"
         LAST_RATE_USAGE = "Indefinido"
-# ========================= FUNÇÃO DE MENSAGEM VIP ==========================
+#==================FUNÇÃO DE MENSAGEM VIP (PROFISSIONAL - HT/FT)=====================
 def build_signal_message_vip(match, estrategias, stats):
     """
-    Monta a mensagem formatada em HTML para envio ao grupo VIP do Telegram
+    Monta a mensagem formatada (HTML) no padrão profissional VIP.
+    Detecta automaticamente o período (HT/FT) e aplica layout elegante.
     """
     try:
+        # ====== Dados principais do jogo ======
         home = match['teams']['home']['name']
         away = match['teams']['away']['name']
         league = match['league']['name']
         tempo = match['fixture']['status']['elapsed']
         placar_home = match['goals']['home']
         placar_away = match['goals']['away']
+
+        # ====== Estatísticas ======
         cantos_home = stats.get('home_corners', 0)
         cantos_away = stats.get('away_corners', 0)
-        total_cantos = stats.get('total_corners', 0)
         injury_time = stats.get('injury_time', '?')
-
         odds_home = stats.get('odds_home', '-')
         odds_draw = stats.get('odds_draw', '-')
         odds_away = stats.get('odds_away', '-')
 
+        # Links
         link_cornerprobet = stats.get('link_cornerprobet', '')
         link_bet365 = stats.get('link_bet365', '')
 
+        # ====== Identifica período ======
+        periodo = "HT" if tempo <= 45 else "FT"
+
+        # ====== Montagem ======
         mensagem = f"""
-📣 <b>Alerta Estratégia: Asiáticos/Limite - VIP 📣</b>
-🏟 <b>Jogo:</b> {home} x {away}
+📣 <b>Alerta Estratégia: Asiáticos/Limite - {periodo} 📣</b>
+🏟 <b>Jogo:</b> {home} ({stats.get('pos_home', '–')}º) x ({stats.get('pos_away', '–')}º) {away}
 🏆 <b>Competição:</b> {league}
-🕛 <b>Tempo:</b> {tempo}'
-⚽ <b>Resultado:</b> {placar_home} x {placar_away}
+🕛 <b>Tempo:</b> {tempo} '
+⚽ <b>Resultado:</b> {placar_home} x {placar_away} (0 x 0 Intervalo)
+📈 <b>Odds 1x2 Pre-live:</b> {odds_home} / {odds_draw} / {odds_away}
 ⛳ <b>Cantos:</b> {cantos_home} - {cantos_away}
 - 1ºP: {cantos_home} - {cantos_away}
 ⌚ <b>Possíveis acréscimos:</b> {injury_time}'
-📈 <b>Odds 1x2 Pre-live:</b> {odds_home} / {odds_draw} / {odds_away}
 
-<a href="{link_cornerprobet}">🔗 CornerProBet</a>
-<a href="{link_bet365}">🎯 Bet365</a>
+<a href="{link_cornerprobet}">https://cornerprobet.com/analysis/</a>
+<a href="{link_bet365}">https://bet365.bet.br/#/AX/K^{away}/</a>
 
 ➡️ <b>Detalhes:</b> 👉 Fazer entrada em ESCANTEIOS (mercado asiático)
 🚀 <b>Sinal VIP ativo!</b>
