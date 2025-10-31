@@ -22,11 +22,14 @@ import threading
 import urllib.parse
 from collections import defaultdict
 from typing import Dict, Any, List, Optional, Tuple
-from datetime import datetime
+from datetime import datetime, date
 import pytz
 
 import requests
 from flask import Flask, request, jsonify
+import csv
+from collections import Counter
+import html  # ← para escape seguro em HTML
 
 # ========================= LOG / ENV =========================
 LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
@@ -84,12 +87,15 @@ no_stats_backoff_until: Dict[int, float] = {}         # evitar pedir stats por X
 request_count = 0
 last_rate_headers: Dict[str, str] = {}
 
-# ====================== ESCAPE HTML =====================
+# ====================== ESCAPE HTML / MD =====================
 MDV2_SPECIALS = r'[_*\[\]()~`>#+\-=|{}.!]'
 
 def escape_markdown(text: Any) -> str:
     s = str(text) if text is not None else ""
     return re.sub(MDV2_SPECIALS, lambda m: "\\" + m.group(0), s)
+
+def _html(txt: Any) -> str:
+    return html.escape(str(txt), quote=False)
 
 # ============================ FLASK ===========================
 app = Flask(__name__)
@@ -98,7 +104,7 @@ app = Flask(__name__)
 def root():
     return jsonify({
         'status': 'ok',
-        'service': 'Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3',
+        'service': 'Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3 (NASA)',
         'scan_interval_base': SCAN_INTERVAL_BASE,
         'renotify_minutes': RENOTIFY_MINUTES
     }), 200
@@ -146,7 +152,7 @@ def telegram_webhook():
                 f"🌐 Status API: {api_status}\n"
                 f"📉 Uso da API: {uso_api}\n"
                 "━━━━━━━━━━━━━━━━━━━\n"
-                "🤖 Versão: Multi v2 Econômico ULTRA Sensível v3"
+                "🤖 Versão: Multi v2 Econômico ULTRA Sensível v3 (NASA)"
             )
             send_telegram_message_plain(resposta, parse_mode="HTML")
 
@@ -267,16 +273,16 @@ def get_fixture_statistics(fixture_id: int) -> Optional[List[Dict[str, Any]]]:
         data = safe_request(url, headers=HEADERS, params=params)
 
         if not data:
-            # ajuste v3.1 -> backoff 90s (antes 240s)
-            no_stats_backoff_until[fixture_id] = now + 90
-            logger.warning("⚠️ Stats sem resposta. Backoff 90s para fixture=%s", fixture_id)
+            # 🚀 NASA: backoff acelerado 45s (antes 90s)
+            no_stats_backoff_until[fixture_id] = now + 45
+            logger.warning("⚠️ Stats sem resposta. Backoff 45s para fixture=%s", fixture_id)
             return None
 
         stats = data.get("response", [])
         if not stats:
-            # ajuste v3.1 -> backoff curto 90s (antes 180s)
-            no_stats_backoff_until[fixture_id] = now + 90
-            logger.debug("Sem estatísticas para fixture=%s (backoff curto 90s).", fixture_id)
+            # 🚀 NASA: backoff acelerado 45s (antes 90s)
+            no_stats_backoff_until[fixture_id] = now + 45
+            logger.debug("Sem estatísticas para fixture=%s (backoff 45s).", fixture_id)
             return None
 
         return stats
@@ -401,7 +407,7 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
         19.5 <= minuto <= 79.5):
         estrategias.append("Pressão Alternada (Ambos Atacando)")
 
-    # Composite 3/5  -> ajuste v3.1 para 2/5
+    # Composite 2/5
     home_g = fixture.get('goals', {}).get('home', 0) or 0
     away_g = fixture.get('goals', {}).get('away', 0) or 0
     cond_attacks  = (metrics['home_attacks'] + metrics['away_attacks']) >= ATTACKS_MIN_SUM
@@ -413,7 +419,6 @@ def verificar_estrategias_vip(fixture: Dict[str, Any], metrics: Dict[str, Any]):
     cond_window   = (HT_WINDOW[0] <= minuto <= HT_WINDOW[1]) or (FT_WINDOW[0] <= minuto <= FT_WINDOW[1])
     true_count = sum([cond_attacks, cond_danger, cond_pressure, cond_score, cond_window])
 
-    # ajuste v3.1 -> composite 2/5 (antes: >= 3)
     composite_ok = true_count >= 2
 
     logger.debug("🧩 Composite (Setup 2/5): Ataques=%s | Perigo=%s | Pressão=%s | Placar=%s | Janela=%s → %d/5 | Estratégias VIP: %d/10",
@@ -430,7 +435,7 @@ def should_notify(fixture_id: int, signal_key: str) -> bool:
         return True
     return False
 
-# ===================== VIP MESSAGE =====================
+# ===================== VIP MESSAGE HELPERS =====================
 def build_bet365_link(fixture: Dict[str, Any]) -> str:
     home = (fixture.get("teams", {}) or {}).get("home", {}).get("name", "") or ""
     away = (fixture.get("teams", {}) or {}).get("away", {}).get("name", "") or ""
@@ -444,91 +449,200 @@ def _format_minute(elapsed: Any) -> str:
     except Exception:
         return str(elapsed)
 
-def build_signal_message_vip_v3(fixture: dict, estrategias: list, metrics: dict) -> str:
-    """
-    Monta a mensagem do sinal no estilo VIP Pro — completa, detalhada e formatada em 	HTML.
-    """
-
+# ===================== VIP NASA: COLETA COMPLETA =====================
+def _read_json_fast(url: str, headers: dict, timeout=8) -> dict:
     try:
-        # ---------- Dados básicos ----------
-        teams = fixture.get("teams", {}) or {}
-        league_data = fixture.get("league", {}) or {}
-        league = league_data.get("name", "?")
-        home_team = (teams.get("home", {}) or {}).get("name", "?")
-        away_team = (teams.get("away", {}) or {}).get("name", "?")
-        goals = fixture.get("goals", {}) or {}
-        score = f"{goals.get('home', '-')} x {goals.get('away', '-')}"
-        minute = metrics.get("minute", 0)
-        minute_txt = f"{minute:.0f}'"
-        period = "HT" if minute <= 45 else "FT"
+        r = requests.get(url, headers=headers, timeout=timeout)
+        if r.status_code == 200:
+            return r.json()
+        return {}
+    except Exception:
+        return {}
 
-        # ---------- Estatísticas ----------
-        home_c = metrics.get("home_corners", 0)
-        away_c = metrics.get("away_corners", 0)
-        press_home = f"{metrics.get('press_home', 0.0):.2f}"
-        press_away = f"{metrics.get('press_away', 0.0):.2f}"
-        home_att = metrics.get("home_attacks", 0)
-        away_att = metrics.get("away_attacks", 0)
-        home_d = metrics.get("home_danger", 0)
-        away_d = metrics.get("away_danger", 0)
-        home_sh = metrics.get("home_shots", 0)
-        away_sh = metrics.get("away_shots", 0)
-        home_pos = metrics.get("home_pos", 0)
-        away_pos = metrics.get("away_pos", 0)
-        stadium_small = "✅" if metrics.get("small_stadium") else "❌"
+def _is_probably_reserve_or_uX(league_name: str) -> bool:
+    if not league_name:
+        return False
+    ln = league_name.lower()
+    bad = ["u21", "u20", "u19", "reserva", "reserve", "amistoso", "friendly", "women", "sub-"]
+    return any(t in ln for t in bad)
 
-        # ---------- Odds e links ----------
-        odds_home = metrics.get("odd_home", "-")
-        odds_draw = metrics.get("odd_draw", "-")
-        odds_away = metrics.get("odd_away", "-")
-        bet_link = build_bet365_link(fixture)
-        link_cornerprobet = metrics.get("cornerprobet_url", "https://cornerprobet.com/")
+def coletar_dados_completos_vip_nasa(fixture_id: int, headers: dict, api_base: str) -> Dict[str, Any]:
+    """
+    Coleta dados premium:
+    - Odds 1x2 (bookmaker=8 Bet365), Standings (posições), Posse e Cantos por lado (live),
+      Acréscimos prováveis via events (maior extra do período), Selo de verificação e filtro de liga.
+    """
+    out = {
+        "home_pos": "–", "away_pos": "–",
+        "odds_home": "-", "odds_draw": "-", "odds_away": "-",
+        "home_posse": "?", "away_posse": "?",
+        "home_corners": "?", "away_corners": "?",
+        "injury_time": "?",
+        "dados_verificados": False,
+        "liga_confiavel": True,
+        "bookmaker_ok": False
+    }
 
-        estrategias_block = " • ".join(estrategias) if estrategias else "Setup 2/5 válido"
+    # 1) Fixture base
+    fx = _read_json_fast(f"{api_base}/fixtures?id={fixture_id}", headers)
+    if not fx.get("response"):
+        return out
+    match = fx["response"][0]
+    league = match.get("league", {}) or {}
+    league_id = league.get("id")
+    league_name = league.get("name", "")
+    season = league.get("season")
 
-        # ---------- Lógica de domínio ----------
-        if float(press_home) > float(press_away):
-            dominio = "mandante"
-            favorito = home_team
-        elif float(press_home) < float(press_away):
-            dominio = "visitante"
-            favorito = away_team
-        else:
-            dominio = "equilibrado"
-            favorito = "nenhum"
+    home = (match.get("teams", {}) or {}).get("home", {}) or {}
+    away = (match.get("teams", {}) or {}).get("away", {}) or {}
+    home_id = home.get("id")
+    away_id = away.get("id")
 
-        recomendacao = (
-            f"⚠️ Possível canto ou gol para o {favorito} antes do final do período"
-            if dominio != "equilibrado"
-            else "⚠️ Jogo equilibrado — monitorar ataques de ambos os lados"
-        )
+    out["liga_confiavel"] = not _is_probably_reserve_or_uX(league_name)
 
-        # ---------- Montagem final ----------
-        msg = (
-            f"📣 Alerta Estratégia: Asiáticos - {period} 📣\n"
-            f"🏟️ Jogo: {home_team} x {away_team}\n"
-            f"🏆 Liga: {league}\n"
-            f"🕒 Tempo: {minute_txt}\n"
-            f"⚽ Placar: {score}\n"
-            f"⛳ Cantos: {home_c} - {away_c} (1T)\n"
-            f"📈 Odds Pré-Live: {odds_home} / {odds_draw} / {odds_away}\n\n"
-            f"📊 Indicadores do Jogo:\n"
-            f"• Pressão → {home_team}: {press_home} | {away_team}: {press_away}\n"
-            f"• Ataques → {home_att} x {away_att}\n"
-            f"• Perigosos → {home_d} x {away_d}\n"
-            f"• Finalizações → {home_sh} x {away_sh}\n"
-            f"• Posse de Bola → {home_pos}% x {away_pos}%\n"
-            f"• Estádio Pequeno: {stadium_small}\n\n"
-            f"📌 Estratégias Ativas: {estrategias_block}\n"
-            f"📌 Análise: Jogo com domínio {dominio} — {recomendacao}\n\n"
-            f"🔗 [CornerProBet]({link_cornerprobet}) | [Bet365]({bet_link})\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━"
-        )
+    # 2) Odds — Bet365
+    odds = _read_json_fast(f"{api_base}/odds?fixture={fixture_id}&bookmaker=8", headers)
+    try:
+        if odds.get("response"):
+            book = odds["response"][0]["bookmakers"][0]
+            if book.get("id") == 8 or "bet365" in (book.get("name","").lower()):
+                bets = book["bets"][0]["values"]
+                out["odds_home"] = bets[0].get("odd", "-")
+                out["odds_draw"] = bets[1].get("odd", "-")
+                out["odds_away"] = bets[2].get("odd", "-")
+                out["bookmaker_ok"] = True
+    except Exception:
+        pass
 
-        return msg.strip()
+    # 3) Standings
+    if league_id and season:
+        st = _read_json_fast(f"{api_base}/standings?league={league_id}&season={season}", headers)
+        try:
+            groups = st["response"][0]["league"]["standings"]
+            for table in groups:
+                for row in table:
+                    tid = row["team"]["id"]
+                    if tid == home_id:
+                        out["home_pos"] = f"{row['rank']}º"
+                    if tid == away_id:
+                        out["away_pos"] = f"{row['rank']}º"
+        except Exception:
+            pass
+
+    # 4) Estatísticas live (posse, cantos)
+    st_live = _read_json_fast(f"{api_base}/fixtures/statistics?fixture={fixture_id}", headers)
+    try:
+        if st_live.get("response"):
+            h_c, a_c = None, None
+            for team_stat in st_live["response"]:
+                tid = (team_stat.get("team") or {}).get("id")
+                for s in team_stat.get("statistics", []):
+                    t = (s.get("type") or "").strip()
+                    v = s.get("value")
+                    if t == "Ball Possession" and isinstance(v, str):
+                        val = v.replace("%","").strip()
+                        if tid == home_id:
+                            out["home_posse"] = val
+                        elif tid == away_id:
+                            out["away_posse"] = val
+                    if t in ("Corner Kicks", "Corners"):
+                        if isinstance(v, int):
+                            if tid == home_id: h_c = v
+                            if tid == away_id: a_c = v
+            if h_c is not None: out["home_corners"] = str(h_c)
+            if a_c is not None: out["away_corners"] = str(a_c)
+    except Exception:
+        pass
+
+    # 5) Events -> acréscimos
+    ev = _read_json_fast(f"{api_base}/fixtures/events?fixture={fixture_id}", headers)
+    try:
+        extra_max = None
+        for e in ev.get("response", []):
+            ex = (e.get("time") or {}).get("extra")
+            if isinstance(ex, int):
+                extra_max = ex if extra_max is None else max(extra_max, ex)
+        if extra_max is not None:
+            out["injury_time"] = f"{extra_max}'"
+    except Exception:
+        pass
+
+    # Selo verificado
+    if (out["bookmaker_ok"] or out["home_pos"]!="–" or out["away_pos"]!="–") and \
+       (out["home_posse"]!="?" or out["home_corners"]!="?" or out["away_corners"]!="?"):
+        out["dados_verificados"] = True
+
+    return out
+
+def formatar_mensagem_vip_nasa(match: Dict[str,Any], estrategias: list, st: Dict[str,Any]) -> str:
+    """
+    Mensagem HTML premium (segura) com todos os dados possíveis.
+    """
+    home = (match['teams']['home']['name'])
+    away = (match['teams']['away']['name'])
+    league = (match['league']['name'])
+    tempo = match['fixture']['status']['elapsed']
+    placar_home = match['goals']['home']
+    placar_away = match['goals']['away']
+    periodo = "HT" if (isinstance(tempo, int) and tempo <= 45) else "FT"
+
+    estrategias_txt = " • ".join(estrategias) if estrategias else "Setup válido (2/5)"
+    cpb = "https://cornerprobet.com/analysis/"
+    bet = build_bet365_link(match)
+
+    selo = "✅" if st.get("dados_verificados") else "⚠️"
+    liga_ok = st.get("liga_confiavel", True)
+    liga_txt = "" if liga_ok else " (⚠️ verifique: pode ser reservas/U21)"
+
+    hc = st.get("home_corners", "?")
+    ac = st.get("away_corners", "?")
+
+    msg = f"""
+📣 <b>Alerta Estratégia: Asiáticos/Limite - {periodo}</b> 📣
+🏟 <b>Jogo:</b> {_html(home)} ({_html(st.get('home_pos','–'))}) x ({_html(st.get('away_pos','–'))}) {_html(away)}
+🏆 <b>Competição:</b> {_html(league)}{liga_txt}
+🕛 <b>Tempo:</b> {_html(tempo)} '
+⚽ <b>Placar:</b> {_html(placar_home)} x {_html(placar_away)}
+⛳ <b>Cantos:</b> {_html(hc)} - {_html(ac)}
+💥 <b>Posse de Bola:</b> {_html(st.get('home_posse','?'))}% / {_html(st.get('away_posse','?'))}%
+⌚ <b>Possíveis acréscimos:</b> {_html(st.get('injury_time','?'))}
+📈 <b>Odds 1x2 (pré):</b> {_html(st.get('odds_home','-'))} / {_html(st.get('odds_draw','-'))} / {_html(st.get('odds_away','-'))}
+
+📌 <b>Estratégias ativas:</b> {_html(estrategias_txt)}
+🧠 <i>Dados verificados via API-PRO</i> {selo}
+
+🔗 <a href="{cpb}">CornerProBet</a> • <a href="{bet}">Bet365</a>
+
+🚀 <b>Sinal VIP ULTRA PRO NASA ATIVO!</b>
+""".strip()
+    return msg
+
+# ======================FUNÇÃO DE MENSAGEM VIP (SUBSTITUÍDA)=======================
+def build_signal_message_vip(match, estrategias, stats):
+    """
+    Monta a mensagem VIP NASA (HTML) com dados completos.
+    - Coleta enriquecida on-demand (rápido e econômico)
+    - Mescla sem quebrar valores já calculados no seu 'stats'
+    - À prova de erro 400 no Telegram
+    """
+    try:
+        fixture_id = match["fixture"]["id"]
+        enriched = coletar_dados_completos_vip_nasa(fixture_id, HEADERS, API_BASE)
+
+        # Mescla: preserva stats existentes quando estiverem preenchidos
+        full = dict(enriched)
+        for k, v in (stats or {}).items():
+            if v not in (None, "", "?", "-"):
+                full[k] = v
+
+        return formatar_mensagem_vip_nasa(match, estrategias, full)
 
     except Exception as e:
-        return f"⚠️ Erro ao montar mensagem: {e}"
+        # Fallback ultra seguro
+        try:
+            return formatar_mensagem_vip_nasa(match, estrategias, stats or {})
+        except Exception:
+            return f"<b>Alerta Estratégia:</b> falha ao montar mensagem ({_html(e)})"
 
 # ========================= UTIL: MINUTO/PERÍODO =========================
 def get_period(minute: float) -> str:
@@ -568,67 +682,82 @@ def atualizar_metricas(loop_total: int, req_headers: Dict[str, str]):
     else:
         LAST_API_STATUS = "⚠️ Cabeçalhos ausentes"
         LAST_RATE_USAGE = "Indefinido"
-# ========================= FUNÇÃO DE MENSAGEM VIP (PROFISSIONAL - HT/FT) ==========================
-def build_signal_message_vip(match, estrategias, stats):
-    """
-    Monta a mensagem formatada (HTML) no padrão profissional VIP.
-    Detecta automaticamente o período (HT/FT) e aplica layout elegante.
-    Corrigido o parse do Telegram (sem erro de '.').
-    """
+
+# ========================== RELATÓRIO DE PERFORMANCE ==========================
+RELATORIO_PATH = "relatorio.csv"
+
+# 🔹 Registra cada sinal enviado
+def registrar_sinal(fixture: dict, estrategias: list, resultado: str = "⏳") -> None:
+    """Salva cada sinal no arquivo relatorio.csv"""
+    teams = fixture.get("teams", {}) or {}
+    home_team = (teams.get("home", {}) or {}).get("name", "?")
+    away_team = (teams.get("away", {}) or {}).get("name", "?")
+
+    with open(RELATORIO_PATH, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow([
+            date.today().isoformat(),
+            datetime.now().strftime("%H:%M"),
+            f"{home_team} x {away_team}",
+            ",".join(estrategias) if estrategias else "Nenhuma",
+            resultado
+        ])
+
+# 🔹 Atualiza o resultado manualmente (Green/Red)
+def atualizar_resultado(jogo: str, resultado: str):
+    """Atualiza um resultado específico no relatório"""
+    linhas = []
+    with open(RELATORIO_PATH, "r", encoding="utf-8") as f:
+        linhas = [linha.strip().split(",") for linha in f.readlines()]
+    for linha in linhas:
+        if jogo.lower() in linha[2].lower():
+            linha[-1] = resultado
+    with open(RELATORIO_PATH, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerows(linhas)
+
+# 🔹 Gera o relatório e envia no Telegram
+def gerar_relatorio_diario():
+    """Lê o relatorio.csv, calcula estatísticas e envia resumo via Telegram"""
     try:
-        # ====== Dados principais do jogo ======
-        home = match['teams']['home']['name']
-        away = match['teams']['away']['name']
-        league = match['league']['name']
-        tempo = match['fixture']['status']['elapsed']
-        placar_home = match['goals']['home']
-        placar_away = match['goals']['away']
+        with open(RELATORIO_PATH, "r", encoding="utf-8") as f:
+            rows = [r.strip().split(",") for r in f.readlines()]
+    except FileNotFoundError:
+        send_telegram_message("📊 Nenhum dado disponível ainda no relatório.")
+        return
 
-        # ====== Estatísticas ======
-        cantos_home = stats.get('home_corners', 0)
-        cantos_away = stats.get('away_corners', 0)
-        injury_time = stats.get('injury_time', '?')
-        odds_home = stats.get('odds_home', '-')
-        odds_draw = stats.get('odds_draw', '-')
-        odds_away = stats.get('odds_away', '-')
+    hoje = date.today().isoformat()
+    registros = [r for r in rows if r and r[0] == hoje]
+    if not registros:
+        send_telegram_message("📊 Nenhum sinal registrado hoje ainda.")
+        return
 
-        # Links (corrigidos para texto clicável)
-        link_cornerprobet = stats.get('link_cornerprobet', 'https://cornerprobet.com/analysis/')
-        link_bet365 = stats.get('link_bet365', f"https://bet365.bet.br/#/AX/K^{away}/")
+    total_rel = len(registros)
+    greens = sum(1 for r in registros if "✅" in r[-1])
+    reds = sum(1 for r in registros if "❌" in r[-1])
+    pendentes = total_rel - greens - reds
+    eficiencia = (greens / total_rel * 100) if total_rel else 0
 
-        # ====== Identifica período ======
-        periodo = "HT" if tempo <= 45 else "FT"
+    estrategias = [e for r in registros for e in r[3].split(",") if e.strip() not in ["Nenhuma", ""]]
+    mais_frequentes = Counter(estrategias).most_common(1)
+    melhor_estrategia = mais_frequentes[0][0] if mais_frequentes else "—"
 
-        # ====== Montagem ======
-        mensagem = f"""
-📣 <b>Alerta Estratégia: Asiáticos/Limite - {periodo} 📣</b>
-🏟 <b>Jogo:</b> {home} ({stats.get('pos_home', '–')}º) x ({stats.get('pos_away', '–')}º) {away}
-🏆 <b>Competição:</b> {league}
-🕛 <b>Tempo:</b> {tempo} '
-⚽ <b>Resultado:</b> {placar_home} x {placar_away} (0 x 0 Intervalo)
-📈 <b>Odds 1x2 Pre-live:</b> {odds_home} / {odds_draw} / {odds_away}
-⛳ <b>Cantos:</b> {cantos_home} - {cantos_away}
-- 1ºP: {cantos_home} - {cantos_away}
-⌚ <b>Possíveis acréscimos:</b> {injury_time}'
+    msg = (
+        f"📊 Relatório de Performance — Bot Escanteios RP VIP+\n"
+        f"🗓️ Período: {datetime.now().strftime('%d/%m/%Y')}\n"
+        f"📈 Total de Sinais: {total_rel}\n"
+        f"✅ Greens: {greens} ({(greens/total_rel*100):.0f}%)\n"
+        f"❌ Reds: {reds} ({(reds/total_rel*100):.0f}%)\n"
+        f"⏳ Pendentes: {pendentes}\n"
+        f"⚙️ Eficiência Média: {eficiencia:.1f}%\n"
+        f"💡 Melhor Estratégia: {melhor_estrategia}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🚀 Continue operando no modo VIP — rumo aos 80%+ de acerto!"
+    )
 
-🔗 <a href="{link_cornerprobet}">CornerProBet</a>
-🎯 <a href="{link_bet365}">Bet365</a>
-
-➡️ <b>Detalhes:</b> 👉 Fazer entrada em ESCANTEIOS (mercado asiático)
-🚀 <b>Sinal VIP ativo!</b>
-"""
-        return mensagem.strip()
-
-    except Exception as e:
-        return f"<b>Erro ao montar mensagem VIP:</b> {e}"
-
+    send_telegram_message_plain(msg, parse_mode="HTML")
 
 # ========================= MAIN LOOP ==========================
-from collections import defaultdict
-
-# 🔐 Controle global anti-duplicado
-sent_period = defaultdict(set)
-
 def main_loop():
     logger.info("🔁 Loop econômico iniciado. Base: %ss (renotify=%s min).", SCAN_INTERVAL_BASE, RENOTIFY_MINUTES)
     logger.info("🟢 Loop econômico ativo: aguardando jogos ao vivo...")
@@ -715,6 +844,7 @@ def main_loop():
                     try:
                         msg = build_signal_message_vip(fixture, estrategias, metrics)
                         send_telegram_message_plain(msg, parse_mode="HTML")
+                        registrar_sinal(fixture, estrategias, "⏳")
                         signals_sent += 1
                         sent_period[fixture_id].add(period)
                         logger.info(f"📤 Sinal enviado ({period}): {len(estrategias)} estratégias fixture={fixture_id} min={minute:.1f}")
@@ -735,88 +865,12 @@ def main_loop():
         except Exception as e:
             logger.exception(f"Erro no loop principal: {e}")
             time.sleep(SCAN_INTERVAL_BASE)
-# ========================== RELATÓRIO DE PERFORMANCE ==========================
-import csv
-from datetime import datetime, date
-from collections import Counter
 
-RELATORIO_PATH = "relatorio.csv"
-
-# 🔹 Registra cada sinal enviado
-def registrar_sinal(fixture: dict, estrategias: list, resultado: str = "⏳") -> None:
-    """Salva cada sinal no arquivo relatorio.csv"""
-    teams = fixture.get("teams", {}) or {}
-    home_team = (teams.get("home", {}) or {}).get("name", "?")
-    away_team = (teams.get("away", {}) or {}).get("name", "?")
-
-    with open(RELATORIO_PATH, "a", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow([
-            date.today().isoformat(),
-            datetime.now().strftime("%H:%M"),
-            f"{home_team} x {away_team}",
-            ",".join(estrategias) if estrategias else "Nenhuma",
-            resultado
-        ])
-
-# 🔹 Atualiza o resultado manualmente (Green/Red)
-def atualizar_resultado(jogo: str, resultado: str):
-    """Atualiza um resultado específico no relatório"""
-    linhas = []
-    with open(RELATORIO_PATH, "r", encoding="utf-8") as f:
-        linhas = [linha.strip().split(",") for linha in f.readlines()]
-    for linha in linhas:
-        if jogo.lower() in linha[2].lower():
-            linha[-1] = resultado
-    with open(RELATORIO_PATH, "w", encoding="utf-8", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerows(linhas)
-
-# 🔹 Gera o relatório e envia no Telegram
-def gerar_relatorio_diario():
-    """Lê o relatorio.csv, calcula estatísticas e envia resumo via Telegram"""
-    try:
-        with open(RELATORIO_PATH, "r", encoding="utf-8") as f:
-            rows = [r.strip().split(",") for r in f.readlines()]
-    except FileNotFoundError:
-        send_telegram_message("📊 Nenhum dado disponível ainda no relatório.")
-        return
-
-    hoje = date.today().isoformat()
-    registros = [r for r in rows if r and r[0] == hoje]
-    if not registros:
-        send_telegram_message("📊 Nenhum sinal registrado hoje ainda.")
-        return
-
-    total = len(registros)
-    greens = sum(1 for r in registros if "✅" in r[-1])
-    reds = sum(1 for r in registros if "❌" in r[-1])
-    pendentes = total - greens - reds
-    eficiencia = (greens / total * 100) if total else 0
-
-    estrategias = [e for r in registros for e in r[3].split(",") if e.strip() not in ["Nenhuma", ""]]
-    mais_frequentes = Counter(estrategias).most_common(1)
-    melhor_estrategia = mais_frequentes[0][0] if mais_frequentes else "—"
-
-    msg = (
-        f"📊 Relatório de Performance — Bot Escanteios RP VIP+\n"
-        f"🗓️ Período: {datetime.now().strftime('%d/%m/%Y')}\n"
-        f"📈 Total de Sinais: {total}\n"
-        f"✅ Greens: {greens} ({(greens/total*100):.0f}%)\n"
-        f"❌ Reds: {reds} ({(reds/total*100):.0f}%)\n"
-        f"⏳ Pendentes: {pendentes}\n"
-        f"⚙️ Eficiência Média: {eficiencia:.1f}%\n"
-        f"💡 Melhor Estratégia: {melhor_estrategia}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🚀 Continue operando no modo VIP — rumo aos 80%+ de acerto!"
-    )
-
-    send_telegram_message_plain(msg, parse_mode="HTML")
 # =========================== START ============================
 if __name__ == "__main__":
-    logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3")
+    logger.info("🚀 Iniciando Bot Escanteios RP VIP Plus — Multi v2 (Econômico) ULTRA Sensível v3 (NASA)")
     try:
-        boot_msg = "🤖 Bot VIP ULTRA ativo. Ignorando jogos < 18.8', 1 sinal por período e minuto suavizado."
+        boot_msg = "🤖 Bot VIP ULTRA ativo. Ignorando jogos < 18.8', 1 sinal por período e minuto suavizado. Enriquecimento NASA habilitado."
         send_telegram_message_plain(boot_msg)
     except Exception:
         pass
