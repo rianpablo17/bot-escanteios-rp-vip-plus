@@ -574,6 +574,22 @@ def coletar_dados_completos_vip_nasa(fixture_id: int, headers: dict, api_base: s
         out["dados_verificados"] = True
 
     return out
+# === Função auxiliar: buscar eventos da partida ===
+def get_fixture_events(fixture_id: int) -> List[Dict[str, Any]]:
+    """
+    Busca os eventos da partida (faltas, substituições, cartões, gols)
+    usados para estimar acréscimos.
+    """
+    try:
+        url = f"{API_BASE}/fixtures/events"
+        params = {"fixture": fixture_id}
+        data = safe_request(url, headers=HEADERS, params=params)
+        if data and data.get("response"):
+            return data["response"]
+        return []
+    except Exception as e:
+        logger.warning(f"⚠️ Erro ao buscar eventos da fixture {fixture_id}: {e}")
+        return []
 
 def formatar_mensagem_vip_nasa(match: Dict[str,Any], estrategias: list, st: Dict[str,Any]) -> str:
     home = match['teams']['home']['name']
