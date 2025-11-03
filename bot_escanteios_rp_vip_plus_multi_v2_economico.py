@@ -590,6 +590,36 @@ def get_fixture_events(fixture_id: int) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.warning(f"⚠️ Erro ao buscar eventos da fixture {fixture_id}: {e}")
         return []
+# === Funções auxiliares para acréscimos inteligentes ===
+def get_fixture_events(fixture_id: int) -> List[Dict[str, Any]]:
+    """
+    Busca eventos da partida (substituições, cartões, gols, etc) para estimar acréscimos.
+    """
+    try:
+        url = f"{API_BASE}/fixtures/events?fixture={fixture_id}"
+        data = _read_json_fast(url, HEADERS)
+        if data and data.get("response"):
+            return data["response"]
+        return []
+    except Exception as e:
+        logger.warning(f"⚠️ Erro ao buscar eventos da fixture {fixture_id}: {e}")
+        return []
+
+
+def estimate_injury_time(events: List[Dict[str, Any]]) -> str:
+    """
+    Estima o tempo de acréscimos baseado na quantidade de eventos (até 6').
+    """
+    try:
+        if not events:
+            return "–"
+        count = len(events)
+        # quanto mais eventos, maior o acréscimo (máximo 6 minutos)
+        est = min(6, max(1, count // 5 + 1))
+        return f"{est}'"
+    except Exception as e:
+        logger.warning(f"⚠️ Erro ao estimar acréscimos: {e}")
+        return "–"
 
 def formatar_mensagem_vip_nasa(match: Dict[str,Any], estrategias: list, st: Dict[str,Any]) -> str:
     home = match['teams']['home']['name']
