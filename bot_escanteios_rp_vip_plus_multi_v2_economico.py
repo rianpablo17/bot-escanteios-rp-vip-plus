@@ -440,6 +440,118 @@ def _periodo_e_tempo(fixture: Dict[str,Any]) -> Tuple[str,str]:
     return periodo, tempo_fmt
 
 # ===================== VIP NASA: COLETA COMPLETA =====================
+def coletar_dados_completos_vip_nasa(fixture_id: int, headers: dict, api_base: str) -> Dict[str, Any]:
+    """
+    Coleta dados premium:
+    - Odds 1x2 (bookmaker=8 Bet365), Standings (home_rank/away_rank),
+      Posse e Cantos (live), Acréscimos via events, Selo de verificação e filtro de liga.
+    """
+    out = {
+        "home_rank": "–", "away_rank": "–",
+        "odds_home": "-", "odds_draw": "-", "odds_away": "-",
+        "home_posse": "?", "away_posse": "?",
+        "home_corners": "?", "away_corners": "?",
+        "injury_time": "?",
+        "dados_verificados": False,
+        "liga_confiavel": True,
+        "bookmaker_ok": False
+    }
+
+    fx = _read_json_fast(f"{api_base}/fixtures?id={fixture_id}", headers)
+    if not fx.get("response"):
+        return out
+
+    match = fx["response"][0]
+    league = match.get("league", {}) or {}
+    league_id = league.get("id")
+    league_name = league.get("name", "")
+    season = league.get("season")
+
+    teams = match.get("teams", {}) or {}
+    home = teams.get("home", {}) or {}
+    away = teams.get("away", {}) or {}
+    home_id = home.get("id")
+    away_id = away.get("id")
+
+    out["liga_confiavel"] = not _is_probably_reserve_or_uX(league_name)
+
+    # Odds Bet365
+    odds = _read_json_fast(f"{api_base}/odds?fixture={fixture_id}&bookmaker=8", headers)
+    try:
+        if odds.get("response"):
+            book = odds["response"][0]["bookmakers"][0]
+            if book.get("id") == 8 or "bet365" in (book.get("name", "").lower()):
+                bets = book["bets"][0]["values"]
+                out["odds_home"] = bets[0].get("odd", "-")
+                out["odds_draw"] = bets[1].get("odd", "-")
+                out["odds_away"] = bets[2].get("odd", "-")
+                out["bookmaker_ok"] = True
+    except Exception:
+        pass
+
+    # Standings
+    if league_id and season:
+        st = _read_json_fast(f"{api_base}/standings?league={league_id}&season={season}", headers)
+        try:
+            groups = st["response"][0]["league"]["standings"]
+            for table in groups:
+                for row in table:
+                    tid = row["team"]["id"]
+                    if tid == home_id:
+                        out["home_rank"] = f"{row['rank']}º"
+                    if tid == away_id:
+                        out["away_rank"] = f"{row['rank']}º"
+        except Exception:
+            pass
+
+    # Estatísticas ao vivo
+    st_live = _read_json_fast(f"{api_base}/fixtures/statistics?fixture={fixture_id}", headers)
+    try:
+        if st_live.get("response"):
+            h_c, a_c = None, None
+            for team_stat in st_live["response"]:
+                tid = (team_stat.get("team") or {}).get("id")
+                for s in team_stat.get("statistics", []):
+                    t = (s.get("type") or "").strip()
+                    v = s.get("value")
+                    if t == "Ball Possession" and isinstance(v, str):
+                        val = v.replace("%", "").strip()
+                        if tid == home_id:
+                            out["home_posse"] = val
+                        elif tid == away_id:
+                            out["away_posse"] = val
+                    if t in ("Corner Kicks", "Corners") and isinstance(v, int):
+                        if tid == home_id:
+                            h_c = v
+                        elif tid == away_id:
+                            a_c = v
+            if h_c is not None:
+                out["home_corners"] = str(h_c)
+            if a_c is not None:
+                out["away_corners"] = str(a_c)
+    except Exception:
+        pass
+
+    # Acréscimos
+    ev = _read_json_fast(f"{api_base}/fixtures/events?fixture={fixture_id}", headers)
+    try:
+        extra_max = None
+        for e in ev.get("response", []):
+            ex = (e.get("time") or {}).get("extra")
+            if isinstance(ex, int):
+                extra_max = ex if extra_max is None else max(extra_max, ex)
+        if extra_max is not None:
+            out["injury_time"] = f"{extra_max}'"
+    except Exception:
+        pass
+
+    # Selo de verificação
+    if (out["bookmaker_ok"] or out["home_rank"] != "–" or out["away_rank"] != "–") and \
+       (out["home_posse"] != "?" or out["home_corners"] != "?" or out["away_corners"] != "?"):
+        out["dados_verificados"] = True
+
+    return out
+
 def formatar_mensagem_vip_nasa(match: Dict[str,Any], estrategias: list, st: Dict[str,Any]) -> str:
     home = match['teams']['home']['name']
     away = match['teams']['away']['name']
