@@ -410,11 +410,14 @@ def should_notify(fixture_id: int, signal_key: str) -> bool:
 
 # ===================== VIP MESSAGE HELPERS =====================
 def build_bet365_link(fixture: Dict[str, Any]) -> str:
+    """
+    Gera link direto para Bet365 com o nome do time pesquisável.
+    Exemplo: https://www.bet365.com/?q=Sporting
+    """
     home = (fixture.get("teams", {}) or {}).get("home", {}).get("name", "") or ""
-    away = (fixture.get("teams", {}) or {}).get("away", {}).get("name", "") or ""
-    league = (fixture.get("league", {}) or {}).get("name", "") or ""
-    query = f"site:bet365.com {home} x {away} {league}"
-    return "https://www.google.com/search?q=" + urllib.parse.quote_plus(query)
+    # Usa o nome do time da casa para gerar o link direto
+    query = urllib.parse.quote_plus(home)
+    return f"https://www.bet365.com/?q={query}"
 
 def _periodo_e_tempo(fixture: Dict[str,Any]) -> Tuple[str,str]:
     """
@@ -573,7 +576,12 @@ def formatar_mensagem_vip_nasa(match: Dict[str,Any], estrategias: list, st: Dict
     liga_txt = "" if liga_ok else " (⚠️ verifique: pode ser reservas/U21)"
 
     hc = st.get("home_corners", "?")
-    ac = st.get("away_corners", "?")
+    ac = st.get("away_corners", "?")  
+ 
+# === acréscimos inteligentes ===
+events = get_fixture_events(fixture_id)
+injury_time_est = estimate_injury_time(events)
+st['injury_time'] = injury_time_est
 
     msg = f"""
 📣 <b>Alerta Estratégia: Asiáticos/Limite - {periodo}</b> 📣
@@ -594,6 +602,20 @@ def formatar_mensagem_vip_nasa(match: Dict[str,Any], estrategias: list, st: Dict
 🚀 <b>Sinal VIP ULTRA PRO NASA ATIVO!</b>
 """.strip()
     return msg
+
+def estimate_injury_time(events: List[Dict[str, Any]]) -> str:
+    """
+    Estima acréscimos entre 1 e 6 minutos conforme a quantidade de eventos.
+    """
+    try:
+        if not events:
+            return "–"
+        count = len(events)
+        # Cálculo simples: quanto mais eventos, maior o acréscimo (máximo 6')
+        est = min(6, max(1, count // 5 + 1))
+        return f"{est}'"
+    except Exception:
+        return "–"
 
 # ======================FUNÇÃO DE MENSAGEM VIP (MESMO NOME)=====================
 def build_signal_message_vip(match, estrategias, stats):
