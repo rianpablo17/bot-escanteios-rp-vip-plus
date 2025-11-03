@@ -439,7 +439,30 @@ def _periodo_e_tempo(fixture: Dict[str,Any]) -> Tuple[str,str]:
         tempo_fmt = f"{int(elapsed)}' (1ºT)" if periodo=='HT' else f"{int(elapsed)}' (2ºT)"
     return periodo, tempo_fmt
 
-# ===================== VIP NASA: COLETA COMPLETA =====================
+# ===================== VIP NASA: HELPERS =====================
+def _read_json_fast(url: str, headers: dict, timeout=8) -> dict:
+    """
+    Faz um GET rápido e seguro.
+    Retorna {} se houver erro de rede, timeout ou código diferente de 200.
+    """
+    try:
+        r = requests.get(url, headers=headers, timeout=timeout)
+        if r.status_code == 200:
+            return r.json()
+        return {}
+    except Exception:
+        return {}
+
+def _is_probably_reserve_or_uX(league_name: str) -> bool:
+    """
+    Verifica se a liga é provavelmente sub-21, reserva, feminina ou amistosa.
+    """
+    if not league_name:
+        return False
+    ln = league_name.lower()
+    bad = ["u21", "u20", "u19", "reserva", "reserve", "amistoso", "friendly", "women", "sub-"]
+    return any(t in ln for t in bad)
+
 def coletar_dados_completos_vip_nasa(fixture_id: int, headers: dict, api_base: str) -> Dict[str, Any]:
     """
     Coleta dados premium:
