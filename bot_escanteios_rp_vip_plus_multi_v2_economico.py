@@ -583,7 +583,7 @@ events = get_fixture_events(fixture_id)
 injury_time_est = estimate_injury_time(events)
 st['injury_time'] = injury_time_est
 
-    msg = f"""
+msg = f"""
 📣 <b>Alerta Estratégia: Asiáticos/Limite - {periodo}</b> 📣
 🏟 <b>Jogo:</b> {_html(home)} ({_html(st.get('home_rank','–'))}) x ({_html(st.get('away_rank','–'))}) {_html(away)}
 🏆 <b>Competição:</b> {_html(league)}{liga_txt}
@@ -601,21 +601,7 @@ st['injury_time'] = injury_time_est
 
 🚀 <b>Sinal VIP ULTRA PRO NASA ATIVO!</b>
 """.strip()
-    return msg
-
-def estimate_injury_time(events: List[Dict[str, Any]]) -> str:
-    """
-    Estima acréscimos entre 1 e 6 minutos conforme a quantidade de eventos.
-    """
-    try:
-        if not events:
-            return "–"
-        count = len(events)
-        # Cálculo simples: quanto mais eventos, maior o acréscimo (máximo 6')
-        est = min(6, max(1, count // 5 + 1))
-        return f"{est}'"
-    except Exception:
-        return "–"
+return msg
 
 # ======================FUNÇÃO DE MENSAGEM VIP (MESMO NOME)=====================
 def build_signal_message_vip(match, estrategias, stats):
