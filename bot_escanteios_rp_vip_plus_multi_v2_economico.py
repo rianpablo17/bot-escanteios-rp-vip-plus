@@ -917,6 +917,121 @@ def main_loop():
         except Exception as e:
             logger.exception(f"Erro no loop principal: {e}")
             time.sleep(SCAN_INTERVAL_BASE)
+# ============================================================
+# ✅ MÓDULO VIP NASA – HISTÓRICO E RELATÓRIO DE SINAIS v1.0
+# ============================================================
+
+import json
+from datetime import datetime, timedelta
+
+HIST_FILE = "historico_sinais.json"
+
+def salvar_sinal(match_id, jogo, tipo, periodo, cantos_atuais, linha_esperada):
+    """
+    Salva o sinal emitido com status PENDENTE.
+    """
+    data = datetime.now().strftime("%Y-%m-%d")
+    novo_registro = {
+        "id": match_id,
+        "jogo": jogo,
+        "tipo": tipo,
+        "periodo": periodo,
+        "cantos_iniciais": cantos_atuais,
+        "linha": linha_esperada,
+        "status": "PENDENTE",
+        "timestamp": datetime.now().strftime("%H:%M:%S")
+    }
+    try:
+        historico = json.load(open(HIST_FILE, "r", encoding="utf-8"))
+    except:
+        historico = {}
+    if data not in historico:
+        historico[data] = []
+    historico[data].append(novo_registro)
+    json.dump(historico, open(HIST_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    print(f"💾 Sinal salvo no histórico ({jogo})")
+
+
+def atualizar_resultado(match_id, total_cantos):
+    """
+    Atualiza o status do sinal para GREEN/RED com base no total de cantos.
+    """
+    try:
+        historico = json.load(open(HIST_FILE, "r", encoding="utf-8"))
+    except:
+        return
+
+    atualizado = False
+    for data, lista in historico.items():
+        for item in lista:
+            if item["id"] == match_id and item["status"] == "PENDENTE":
+                linha = item.get("linha", 4.5)
+                if total_cantos > linha:
+                    item["status"] = "GREEN"
+                else:
+                    item["status"] = "RED"
+                item["cantos_finais"] = total_cantos
+                item["verificado_em"] = datetime.now().strftime("%H:%M:%S")
+                atualizado = True
+                break
+    if atualizado:
+        json.dump(historico, open(HIST_FILE, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        print(f"✅ Resultado atualizado ({match_id}): {item['status']}")
+    return atualizado
+
+
+def gerar_relatorio():
+    """
+    Gera o relatório diário de performance.
+    """
+    try:
+        historico = json.load(open(HIST_FILE, "r", encoding="utf-8"))
+    except:
+        return "📊 Nenhum dado no histórico ainda."
+
+    hoje = datetime.now().strftime("%Y-%m-%d")
+    sinais = historico.get(hoje, [])
+    if not sinais:
+        return "📊 Nenhum sinal registrado hoje."
+
+    greens = sum(1 for s in sinais if s["status"] == "GREEN")
+    reds = sum(1 for s in sinais if s["status"] == "RED")
+    pendentes = sum(1 for s in sinais if s["status"] == "PENDENTE")
+    total = len(sinais)
+    perc = (greens / total * 100) if total else 0
+
+    resumo = (
+        f"📊 <b>Relatório VIP NASA - {hoje}</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"📨 Sinais: <b>{total}</b>\n"
+        f"✅ Greens: <b>{greens}</b>\n"
+        f"❌ Reds: <b>{reds}</b>\n"
+        f"⏳ Pendentes: <b>{pendentes}</b>\n"
+        f"📈 Aproveitamento: <b>{perc:.1f}%</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+    )
+
+    ultimos = sorted(sinais, key=lambda x: x["timestamp"], reverse=True)[:5]
+    for s in ultimos:
+        resumo += f"🏟️ {s['jogo']} — {s['status']}\n"
+
+    return resumo
+
+
+# ============================================================
+# 🔹 EXEMPLO DE USO NO SEU BOT
+# ============================================================
+
+# 1️⃣ Após enviar o sinal:
+# salvar_sinal(match_id, f"{home} x {away}", "Asiáticos/Limite", periodo, cantos_totais, 4.5)
+
+# 2️⃣ Quando quiser atualizar resultado manualmente:
+# atualizar_resultado(match_id, total_cantos)
+
+# 3️⃣ No handler do comando /relatorio:
+# if msg == "/relatorio":
+#     relatorio = gerar_relatorio()
+#     send_message(chat_id, relatorio, parse_mode="HTML")
 
 # =========================== START ============================
 if __name__ == "__main__":
